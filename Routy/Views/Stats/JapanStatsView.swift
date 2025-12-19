@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 struct JapanStatsView: View {
     @Environment(\.modelContext) private var modelContext
@@ -18,6 +19,8 @@ struct JapanStatsView: View {
     @State private var selectedPrefecture: Prefecture?
     @State private var showEditSheet = false
     @State private var isLoading = false
+    @State private var progress: Double = 0.0
+    @State private var showCompletionAlert = false
     
     // 制覇率計算
     var visitedCount: Int {
@@ -55,7 +58,7 @@ struct JapanStatsView: View {
                 .padding(.horizontal)
                 
                 // マップ
-                JapanMapView(stats: $stats) { pref in
+                RealisticJapanMapView(stats: $stats) { pref in
                     selectedPrefecture = pref
                     showEditSheet = true
                 }
@@ -66,8 +69,14 @@ struct JapanStatsView: View {
                 // アクションボタン
                 Button(action: calculateFromCheckpoints) {
                     if isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        VStack(spacing: 4) {
+                            ProgressView(value: progress, total: 1.0)
+                                .progressViewStyle(LinearProgressViewStyle(tint: .white))
+                                .frame(height: 8)
+                            Text("集計中... \(Int(progress * 100))%")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                        }
                     } else {
                         HStack {
                             Image(systemName: "arrow.triangle.2.circlepath")
@@ -93,6 +102,11 @@ struct JapanStatsView: View {
             .sheet(item: $selectedPrefecture) { pref in
                 PrefectureEditSheet(prefecture: pref, level: binding(for: pref))
                     .presentationDetents([.height(300)])
+            }
+            .alert("完了", isPresented: $showCompletionAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("チェックインからの集計が完了しました。")
             }
             .onAppear {
                 loadStats()
@@ -189,69 +203,185 @@ struct JapanStatsView: View {
     
     // チェックイン履歴からの自動集計
     private func calculateFromCheckpoints() {
-        isLoading = true
-        
-        // 1. 各都道府県ごとの訪問日（0時0分基準）を記録
-        var prefectureDates: [Int: Set<Date>] = [:]
-        
-        let calendar = Calendar.current
-        
-        for checkpoint in checkpoints {
-            guard let address = checkpoint.address else { continue }
+        Task {
+            // ローディング開始
+            await MainActor.run { isLoading = true }
             
-            // 住所から都道府県を特定
-            if let pref = japanPrefectures.first(where: { address.contains($0.name) }) {
-                // ロックされている都道府県はスキップ
-                if lockedStats[pref.id] == true { continue }
-                
-                // 日付を0時0分に正規化
-                let startOfDay = calendar.startOfDay(for: checkpoint.timestamp)
-                
-                if prefectureDates[pref.id] == nil {
-                    prefectureDates[pref.id] = []
-                }
-                prefectureDates[pref.id]?.insert(startOfDay)
+            // 1. 各都道府県ごとの訪問日（0時0分基準）を記録
+            var prefectureDates: [Int: Set<Date>] = [:]
+            
+            let calendar = Calendar.current
+            let geocoder = CLGeocoder()
+            
+            // 処理が必要なチェックポイントを抽出（住所なし・座標あり）
+            let checkpointsToProcess = checkpoints.filter { 
+                ($0.address == nil || $0.address!.isEmpty) && $0.latitude != 0 && $0.longitude != 0 
             }
-        }
-        
-        // 2. ステータスの決定と更新
-        for (prefId, dateSet) in prefectureDates {
-            // ロック確認（念のため）
-            if lockedStats[prefId] == true { continue }
-
-            let sortedDates = dateSet.sorted()
-            let currentLevel = stats[prefId] ?? .none
-            var newLevel: PrefectureLevel = .none
             
-            if sortedDates.isEmpty { continue }
+            // 座標でのグルーピング（近接地点をまとめて1回だけリクエストする）
+            // 小数点以下2桁 ≒ 緯度1度111km -> 0.01度≒1.1km。
+            // 観光地レベル（約1km圏内）の写真は同じ都道府県であるとみなして高速化
+            var coordinateGroups: [String: [Checkpoint]] = [:]
+            for cp in checkpointsToProcess {
+                let key = String(format: "%.2f_%.2f", cp.latitude, cp.longitude)
+                coordinateGroups[key, default: []].append(cp)
+            }
             
-            // 連続した2日間の記録があるかチェック（宿泊判定）
-            var hasConsecutiveDays = false
-            if sortedDates.count >= 2 {
-                for i in 0..<(sortedDates.count - 1) {
-                    let d1 = sortedDates[i]
-                    let d2 = sortedDates[i+1]
+            // グループごとの代表を取得
+            let uniqueTasks = coordinateGroups.values.compactMap { $0.first }
+            let totalTasks = uniqueTasks.count
+            var completedTasks = 0
+            
+            // 既に住所があるチェックポイントを先に処理
+            for checkpoint in checkpoints {
+                if let addr = checkpoint.address, !addr.isEmpty {
+                    processAddress(addr, date: checkpoint.timestamp, into: &prefectureDates, calendar: calendar)
+                }
+            }
+            
+            // 住所がないチェックポイント不要なら即完了
+            if totalTasks == 0 {
+                await MainActor.run {
+                    progress = 1.0
+                    showCompletionAlert = true
+                    isLoading = false
+                }
+                // 下の処理への合流のためreturnせず、addressなしのまま日付集計へ進む（結果0件）
+            } else {
+                
+                // 住所がないチェックポイントを並列処理
+                await withTaskGroup(of: (String?, String, Date).self) { group in
+                    var activeTasks = 0
+                    let maxConcurrency = 12
                     
-                    if let days = calendar.dateComponents([.day], from: d1, to: d2).day, days == 1 {
-                        hasConsecutiveDays = true
-                        break
+                    for checkpoint in uniqueTasks {
+                        if activeTasks >= maxConcurrency {
+                            if let result = await group.next() {
+                                activeTasks -= 1
+                                await MainActor.run {
+                                    completedTasks += 1
+                                    progress = Double(completedTasks) / Double(totalTasks)
+                                }
+                                
+                                if let addr = result.0 {
+                                    let key = result.1
+                                    if let groupCheckpoints = coordinateGroups[key] {
+                                        await MainActor.run {
+                                            for cp in groupCheckpoints {
+                                                if cp.address == nil { cp.address = addr }
+                                            }
+                                        }
+                                        for cp in groupCheckpoints {
+                                            processAddress(addr, date: cp.timestamp, into: &prefectureDates, calendar: calendar)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        group.addTask {
+                            let key = String(format: "%.2f_%.2f", checkpoint.latitude, checkpoint.longitude)
+                            do {
+                                let location = CLLocation(latitude: checkpoint.latitude, longitude: checkpoint.longitude)
+                                let placemarks = try await geocoder.reverseGeocodeLocation(location)
+                                if let pm = placemarks.first, let adminArea = pm.administrativeArea {
+                                    let fullAddress = "\(adminArea) \(pm.locality ?? "")"
+                                    return (fullAddress, key, checkpoint.timestamp)
+                                }
+                            } catch {
+                                // print("Geocoding failed")
+                            }
+                            return (nil, key, checkpoint.timestamp)
+                        }
+                        activeTasks += 1
+                    }
+                    
+                    // 残りのタスクを回収
+                    for await result in group {
+                        await MainActor.run {
+                            completedTasks += 1
+                            progress = Double(completedTasks) / Double(totalTasks)
+                        }
+                        
+                        if let addr = result.0 {
+                            let key = result.1
+                            if let groupCheckpoints = coordinateGroups[key] {
+                                await MainActor.run {
+                                    for cp in groupCheckpoints {
+                                        if cp.address == nil { cp.address = addr }
+                                    }
+                                }
+                                for cp in groupCheckpoints {
+                                    processAddress(addr, date: cp.timestamp, into: &prefectureDates, calendar: calendar)
+                                }
+                            }
+                        }
                     }
                 }
             }
             
-            if hasConsecutiveDays {
-                newLevel = .stayed
-            } else {
-                newLevel = .visited
-            }
-            
-            // 現在のレベルより高い場合のみ更新
-            if newLevel.rawValue > currentLevel.rawValue {
-                stats[prefId] = newLevel
+            // 2. ステータスの決定と更新（メインアクターで実行）
+            await MainActor.run {
+                for (prefId, dateSet) in prefectureDates {
+                    // ロック確認（念のため）
+                    if lockedStats[prefId] == true { continue }
+
+                    let sortedDates = dateSet.sorted()
+                    let currentLevel = stats[prefId] ?? .none
+                    var newLevel: PrefectureLevel = .none
+                    
+                    if sortedDates.isEmpty { continue }
+                    
+                    // 連続した2日間の記録があるかチェック（宿泊判定）
+                    var hasConsecutiveDays = false
+                    if sortedDates.count >= 2 {
+                        for i in 0..<(sortedDates.count - 1) {
+                            let d1 = sortedDates[i]
+                            let d2 = sortedDates[i+1]
+                            
+                            if let days = calendar.dateComponents([.day], from: d1, to: d2).day, days == 1 {
+                                hasConsecutiveDays = true
+                                break
+                            }
+                        }
+                    }
+                    
+                    if hasConsecutiveDays {
+                        newLevel = .stayed
+                    } else {
+                        newLevel = .visited
+                    }
+                    
+                    // 現在のレベルより高い場合のみ更新
+                    if newLevel.rawValue > currentLevel.rawValue {
+                        stats[prefId] = newLevel
+                    }
+                }
+                
+                // 変更を永続化（次回以降のジオコーディングスキップのため）
+                try? modelContext.save()
+                
+                isLoading = false
+                showCompletionAlert = true // 完了アラートを表示
             }
         }
-        
-        isLoading = false
+    }
+    
+    // 住所処理ヘルパー
+    private func processAddress(_ address: String, date: Date, into prefectureDates: inout [Int: Set<Date>], calendar: Calendar) {
+        // 住所から都道府県を特定
+        if let pref = japanPrefectures.first(where: { address.contains($0.name) }) {
+            // ロックされている都道府県はスキップ
+            if lockedStats[pref.id] == true { return }
+            
+            // 日付を0時0分に正規化
+            let startOfDay = calendar.startOfDay(for: date)
+            
+            if prefectureDates[pref.id] == nil {
+                prefectureDates[pref.id] = []
+            }
+            prefectureDates[pref.id]?.insert(startOfDay)
+        }
     }
 }
 

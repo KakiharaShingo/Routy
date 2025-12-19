@@ -237,7 +237,7 @@ struct HomeContent: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 20)
-                        .background(Color.white)
+                        .background(Color(UIColor.secondarySystemGroupedBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 24))
                         .shadow(color: .black.opacity(0.03), radius: 5, x: 0, y: 2)
                     }
@@ -259,7 +259,7 @@ struct HomeContent: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 20)
-                        .background(Color.white)
+                        .background(Color(UIColor.secondarySystemGroupedBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 24))
                         .shadow(color: .black.opacity(0.03), radius: 5, x: 0, y: 2)
                     }
@@ -409,7 +409,7 @@ struct TripCardView: View {
                 .foregroundColor(Color(.systemGray4))
         }
         .padding(12)
-        .background(Color.white)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
     }
