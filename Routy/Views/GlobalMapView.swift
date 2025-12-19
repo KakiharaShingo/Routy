@@ -55,10 +55,42 @@ struct GlobalMapView: View {
                     }
                 }
                 .mapStyle(.standard)
-                .sheet(isPresented: $isSheetPresented) {
-                    NavigationStack {
+                .ignoresSafeArea()
+                
+                // カスタムボトムカード（リスト）
+                if isSheetPresented {
+                    VStack {
+                        Spacer()
+                        
                         VStack(spacing: 0) {
-                            // 日付フィルター（シート内上部）
+                            // 上部のグラバーとタイトル
+                            HStack {
+                                Spacer()
+                                Capsule()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(width: 36, height: 5)
+                                Spacer()
+                            }
+                            .padding(.top, 10)
+                            .padding(.bottom, 5)
+                            
+                            HStack {
+                                Text("記録一覧")
+                                    .font(.headline)
+                                Spacer()
+                                Button(action: {
+                                    withAnimation {
+                                        isSheetPresented = false
+                                    }
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 10)
+                            
+                            // 日付フィルター
                             if !availableDates.isEmpty {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 8) {
@@ -77,26 +109,25 @@ struct GlobalMapView: View {
                                             }
                                         }
                                     }
-                                    .padding()
+                                    .padding(.horizontal)
+                                    .padding(.bottom, 10)
                                 }
-                                .background(Color(.systemBackground))
-                                .shadow(radius: 1)
                             }
                             
                             // チェックポイント一覧
                             if viewModel.checkpoints.isEmpty {
                                 ContentUnavailableView("データがありません", systemImage: "mappin.slash")
+                                    .frame(height: 150)
                             } else {
                                 ScrollViewReader { proxy in
                                     List(viewModel.checkpoints) { checkpoint in
                                         NavigationLink(destination: CheckpointDetailView(checkpoint: checkpoint)) {
                                             HStack {
                                                 VStack(alignment: .leading, spacing: 4) {
-                                                    Text(DateFormatter.localizedString(from: checkpoint.timestamp, dateStyle: .short, timeStyle: .short))
+                                                    Text(DateFormatter.japaneseDateTime.string(from: checkpoint.timestamp))
                                                         .font(.caption)
                                                         .foregroundColor(.secondary)
                                                     
-                                                    // 名前があれば名前、なければ住所
                                                     Text(checkpoint.name ?? checkpoint.address ?? "場所不明")
                                                         .font(.body)
                                                         .fontWeight(.medium)
@@ -113,11 +144,11 @@ struct GlobalMapView: View {
                                         .id(checkpoint.id)
                                         .listRowBackground(viewModel.selectedCheckpoint?.id == checkpoint.id ? Color.blue.opacity(0.1) : nil)
                                         .onTapGesture {
-                                            // リストタップで地図も選択
                                             viewModel.selectCheckpoint(checkpoint)
                                         }
                                     }
                                     .listStyle(.plain)
+                                    .frame(height: 250) // リストの高さ制限
                                     .onChange(of: viewModel.selectedCheckpoint) { _, newCheckpoint in
                                         if let checkpoint = newCheckpoint {
                                             withAnimation {
@@ -128,12 +159,36 @@ struct GlobalMapView: View {
                                 }
                             }
                         }
-                        .navigationTitle("記録一覧")
-                        .navigationBarTitleDisplayMode(.inline)
+                        .background(Color(.systemBackground))
+                        .cornerRadius(20)
+                        .shadow(radius: 10)
+                        .padding(.horizontal)
+                        .padding(.bottom, 96) // タブバー分の余白
                     }
-                    .presentationDetents([.fraction(0.3), .medium, .large])
-                    .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-                    .interactiveDismissDisabled()
+                    .transition(.move(edge: .bottom))
+                } else {
+                    // シート再表示ボタン
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button(action: {
+                                withAnimation {
+                                    isSheetPresented = true
+                                }
+                            }) {
+                                Image(systemName: "list.bullet")
+                                    .font(.title2)
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .clipShape(Circle())
+                                    .shadow(radius: 4)
+                            }
+                            .padding(.trailing, 20)
+                            .padding(.bottom, 110) // タブバー分の余白
+                        }
+                    }
                 }
                 
                 // ローディング表示
@@ -290,7 +345,7 @@ struct CheckpointDetailView: View {
                     
                     // 日時と住所
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(DateFormatter.localizedString(from: checkpoint.timestamp, dateStyle: .full, timeStyle: .short))
+                        Text(DateFormatter.japaneseDateTime.string(from: checkpoint.timestamp))
                             .font(.headline)
                             .foregroundColor(.blue)
                         
@@ -336,9 +391,25 @@ struct CheckpointDetailView: View {
     }
 }
 
+// 日本語の日付フォーマッター拡張
 extension DateFormatter {
+    static let japaneseDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.dateFormat = "yyyy年M月d日"
+        return formatter
+    }()
+    
+    static let japaneseDateTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.dateFormat = "yyyy年M月d日 H:mm"
+        return formatter
+    }()
+    
     static let monthDay: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ja_JP")
         formatter.dateFormat = "M/d"
         return formatter
     }()

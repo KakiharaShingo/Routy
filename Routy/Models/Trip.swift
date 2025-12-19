@@ -74,3 +74,14 @@ class Trip {
         self.updatedAt = updatedAt
     }
 }
+
+// MARK: - Hashable Conformance for Navigation
+extension Trip: Hashable {
+    static func == (lhs: Trip, rhs: Trip) -> Bool {
+        lhs.persistentModelID == rhs.persistentModelID
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(persistentModelID)
+    }
+}

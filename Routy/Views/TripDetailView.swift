@@ -8,7 +8,7 @@
 import SwiftUI
 import SwiftData
 
-/// Trip詳細画面（メニュー形式）
+/// Trip詳細画面（Redesigned）
 struct TripDetailView: View {
     let trip: Trip
 
@@ -16,83 +16,69 @@ struct TripDetailView: View {
     @State private var showManualCheckin = false
     @State private var showLocationSearch = false
     @State private var showImageCheckin = false
+    
+    // Environment
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        List {
-            // 旅行情報セクション
-            Section {
-                HStack {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(trip.name)
-                            .font(.title2)
-                            .fontWeight(.bold)
-
-                        Text("\(DateFormatter.dateOnly.string(from: trip.startDate)) - \(DateFormatter.dateOnly.string(from: trip.endDate))")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-
-                        Text("\(trip.checkpoints.count)箇所記録済み")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+        ZStack {
+            // Background
+            Color(UIColor.systemGroupedBackground)
+                .ignoresSafeArea()
+            
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 24) {
+                    // Header Card
+                    TripHeaderCard(trip: trip)
+                    
+                    // Actions Grid
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("メニュー")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                            .padding(.horizontal, 4)
+                        
+                        // Viewing Options
+                        VStack(spacing: 12) {
+                            NavigationLink(destination: MapView(trip: trip)) {
+                                ActionCard(icon: "map.fill", title: "地図で見る", subtitle: "思い出を地図上に表示", color: .blue)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            NavigationLink(destination: TimelineView(trip: trip, onCheckpointTap: { _ in })) {
+                                ActionCard(icon: "list.bullet", title: "タイムライン", subtitle: "時系列で振り返る", color: .green)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            NavigationLink(destination: RouteAnimationView(checkpoints: trip.checkpoints)) {
+                                ActionCard(icon: "play.circle.fill", title: "経路再生", subtitle: "旅の軌跡をアニメーション再生", color: .orange)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    Spacer()
+                    .padding(.horizontal, 20)
+                    
+                    // Add Content
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("記録を追加")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                            .padding(.horizontal, 4)
+                        
+                        Button(action: { showAddPhotos = true }) {
+                            ActionCard(icon: "photo.on.rectangle", title: "写真から追加", subtitle: "カメラロールからまとめて追加", color: .purple)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 20)
+                    
+                    Spacer(minLength: 40)
                 }
-                .padding(.vertical, 8)
-            }
-
-            // 閲覧メニュー
-            Section(header: Text("閲覧")) {
-                NavigationLink {
-                    MapView(trip: trip)
-                    // Text("Map Test View")
-                    //    .onAppear { print("DEBUG: Map Test View Appeared") }
-                } label: {
-                    MenuRowView(
-                        icon: "map.fill",
-                        title: "地図で見る",
-                        description: "すべてのチェックポイントを地図上に表示",
-                        color: .blue
-                    )
-                }
-
-                NavigationLink {
-                    TimelineView(trip: trip, onCheckpointTap: { _ in })
-                } label: {
-                    MenuRowView(
-                        icon: "list.bullet",
-                        title: "タイムライン",
-                        description: "時系列で記録を確認",
-                        color: .green
-                    )
-                }
-
-                NavigationLink {
-                    RouteAnimationView(checkpoints: trip.checkpoints)
-                } label: {
-                    MenuRowView(
-                        icon: "play.circle.fill",
-                        title: "経路再生",
-                        description: "旅のルートをアニメーションで再生",
-                        color: .orange
-                    )
-                }
-            }
-
-            // チェックイン追加メニュー
-            Section(header: Text("記録を追加")) {
-                Button(action: {
-                    showAddPhotos = true
-                }) {
-                    MenuRowView(
-                        icon: "photo.on.rectangle",
-                        title: "写真から追加",
-                        description: "カメラロールの写真から位置情報を取得",
-                        color: .purple
-                    )
-                }
+                .padding(.top, 20)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+//        .navigationTitle(trip.name) // Optional: Hide title for cleaner look? Keeping it for navigation context.
         .sheet(isPresented: $showAddPhotos) {
             AddPhotosSheet(trip: trip, isPresented: $showAddPhotos)
         }
@@ -108,36 +94,98 @@ struct TripDetailView: View {
     }
 }
 
-/// メニュー行表示コンポーネント
-struct MenuRowView: View {
+// MARK: - Subviews
+
+struct TripHeaderCard: View {
+    let trip: Trip
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Title & Date
+            VStack(alignment: .leading, spacing: 6) {
+                Text(trip.name)
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.primary)
+                
+                HStack {
+                    Image(systemName: "calendar")
+                        .foregroundColor(.gray)
+                    Text("\(DateFormatter.dateOnly.string(from: trip.startDate)) - \(DateFormatter.dateOnly.string(from: trip.endDate))")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+            }
+            
+            Divider()
+            
+            // Stats Row
+            HStack(spacing: 40) {
+                VStack(alignment: .leading) {
+                    Text("\(trip.checkpoints.count)")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.primary)
+                    Text("スポット")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.gray)
+                }
+                
+                // Future stats can go here (e.g. Distance)
+                
+                Spacer()
+                
+                // Cover Image (Small thumbnail if available)
+                if let first = trip.checkpoints.first, let assetID = first.photoAssetID {
+                     PhotoThumbnail(assetID: assetID, size: CGSize(width: 60, height: 60))
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 60, height: 60)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
+        }
+        .padding(24)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 5)
+        .padding(.horizontal, 20)
+    }
+}
+
+struct ActionCard: View {
     let icon: String
     let title: String
-    let description: String
+    let subtitle: String
     let color: Color
-
+    
     var body: some View {
         HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(.white)
-                .frame(width: 50, height: 50)
-                .background(color)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(color.opacity(0.1))
+                    .frame(width: 56, height: 56)
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(color)
+            }
+            
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline)
                     .foregroundColor(.primary)
-
-                Text(description)
+                Text(subtitle)
                     .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
+                    .foregroundColor(.gray)
             }
-
+            
             Spacer()
+            
+            Image(systemName: "chevron.right")
+                .foregroundColor(Color(.systemGray4))
         }
-        .padding(.vertical, 4)
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.03), radius: 5, x: 0, y: 2)
     }
 }
 
