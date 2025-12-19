@@ -12,8 +12,8 @@ import Observation
 import SwiftUI
 
 /// 地図画面のViewModel
-@Observable
 @MainActor
+@Observable
 class MapViewModel {
     /// 現在の旅行
     var currentTrip: Trip?
@@ -31,11 +31,33 @@ class MapViewModel {
     private let photoService: PhotoService
     private let geocodingService: GeocodingService
     private let modelContext: ModelContext
+    private let syncManager = SyncManager.shared
+    private let authService = AuthService.shared
+    private let storageService = StorageService.shared
 
-    init(modelContext: ModelContext, photoService: PhotoService = PhotoService(), geocodingService: GeocodingService = GeocodingService()) {
+    init(modelContext: ModelContext, photoService: PhotoService? = nil, geocodingService: GeocodingService? = nil) {
         self.modelContext = modelContext
-        self.photoService = photoService
-        self.geocodingService = geocodingService
+        self.photoService = photoService ?? PhotoService()
+        self.geocodingService = geocodingService ?? GeocodingService()
+        
+        // 匿名ログインの確認
+        if !authService.isAuthenticated {
+            Task {
+                do {
+                    try await authService.signInAnonymously()
+                    print("✅ [MapViewModel] 自動ログイン成功")
+                } catch {
+                    print("❌ [MapViewModel] 自動ログイン失敗: \(error)")
+                }
+            }
+        }
+    }
+    
+    /// クラウドと同期
+    func syncToCloud() {
+        Task {
+            await syncManager.syncAll(modelContext: modelContext)
+        }
     }
 
     /// 既存のTripに写真を追加
@@ -81,6 +103,16 @@ class MapViewModel {
 
             // 状態を更新
             checkpoints = trip.checkpoints
+            
+            // 同期フラグを設定
+            trip.markNeedsSync()
+            for checkpoint in newCheckpoints {
+                checkpoint.markNeedsSync()
+            }
+            try modelContext.save()
+            
+            // クラウド同期
+            syncToCloud()
 
             // 地図の初期位置を設定
             centerMapOnCheckpoints()
@@ -140,6 +172,16 @@ class MapViewModel {
             // 状態を更新
             currentTrip = trip
             checkpoints = newCheckpoints
+            
+            // 同期フラグを設定
+            trip.markNeedsSync()
+            for checkpoint in newCheckpoints {
+                checkpoint.markNeedsSync()
+            }
+            try modelContext.save()
+            
+            // クラウド同期
+            syncToCloud()
 
             // 地図の初期位置を設定
             centerMapOnCheckpoints()
@@ -227,9 +269,14 @@ class MapViewModel {
 
         modelContext.insert(checkpoint)
         checkpoints.append(checkpoint)
+        
+        // 同期フラグ
+        checkpoint.markNeedsSync()
+        currentTrip?.markNeedsSync()
 
         do {
             try modelContext.save()
+            syncToCloud()
         } catch {
             errorMessage = "チェックインの保存に失敗しました"
         }

@@ -11,10 +11,12 @@ import SwiftData
 /// ホーム画面
 struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Trip.createdAt, order: .reverse) private var trips: [Trip]
-
+    // @QueryはTripListViewに移動したため削除
+    
+    @State private var searchText = ""
     @State private var showCreateTrip = false
     @State private var showCheckinSheet = false
+    @State private var showJapanStats = false // 日本制覇マップ遷移用
     @State private var selectedTrip: Trip?
 
     var body: some View {
@@ -93,6 +95,29 @@ struct HomeView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        
+                        // 日本制覇マップボタン
+                        Button(action: {
+                            showJapanStats = true
+                        }) {
+                            HStack {
+                                Spacer()
+                                VStack(spacing: 4) {
+                                    Image(systemName: "trophy.fill")
+                                        .font(.title3)
+                                        .foregroundStyle(.yellow)
+                                    Text("日本制覇マップ")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                }
+                                .padding(.vertical, 12)
+                                Spacer()
+                            }
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .shadow(radius: 1, y: 1)
+                        }
+                        .buttonStyle(.plain)
                     }
                     .padding(.vertical, 8)
                 }
@@ -102,59 +127,84 @@ struct HomeView: View {
 
                 // 旅のリスト
                 Section(header: Text("旅の記録")) {
-                    if trips.isEmpty {
-                        ContentUnavailableView {
-                            Label("記録なし", systemImage: "airplane.departure")
-                        } description: {
-                            Text("新しい旅を作成するか、\nチェックインして記録を残しましょう")
-                        }
-                    } else {
-                        ForEach(trips) { trip in
-                            NavigationLink(value: trip) {
-                                TripRowView(trip: trip)
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
-                                    deleteTrip(trip)
-                                } label: {
-                                    Label("削除", systemImage: "trash")
-                                }
-                            }
-                        }
-                    }
+                    TripListView(searchText: searchText)
                 }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("ホーム")
+            .searchable(text: $searchText, prompt: "旅の名前で検索")
             .navigationDestination(for: Trip.self) { trip in
                 TripDetailView(trip: trip)
+            }
+            .navigationDestination(isPresented: $showJapanStats) {
+                JapanStatsView()
             }
             .sheet(isPresented: $showCreateTrip) {
                 CreateTripSheet(isPresented: $showCreateTrip)
             }
             .sheet(isPresented: $showCheckinSheet) {
-                CheckinSheet(trip: nil, isPresented: $showCheckinSheet, onSave: { coordinate, note in
-                    Task {
-                        // Global check-in
-                        let geocodingService = GeocodingService()
-                        let address = await geocodingService.getAddress(for: coordinate)
-                        let checkpoint = Checkpoint(
-                            latitude: coordinate.latitude,
-                            longitude: coordinate.longitude,
-                            timestamp: Date(),
-                            type: .manualCheckin,
-                            note: note,
-                            address: address,
-                            trip: nil
-                        )
-                        modelContext.insert(checkpoint)
-                        try? modelContext.save()
+                CheckinSheet(trip: nil, isPresented: $showCheckinSheet)
+            }
+            .task {
+                await SyncManager.shared.syncAll(modelContext: modelContext)
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    NavigationLink(destination: AccountView()) {
+                        Image(systemName: "person.crop.circle")
+                            .font(.title2)
                     }
-                })
+                }
             }
         }
     }
 
+    private func deleteTrip(_ trip: Trip) {
+        modelContext.delete(trip)
+        try? modelContext.save()
+    }
+}
+
+/// 検索対応の旅リスト
+struct TripListView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var trips: [Trip]
+    
+    init(searchText: String) {
+        let sortDescriptors = [SortDescriptor(\Trip.startDate, order: .reverse)]
+        
+        if searchText.isEmpty {
+            _trips = Query(sort: sortDescriptors)
+        } else {
+            _trips = Query(filter: #Predicate<Trip> {
+                $0.name.localizedStandardContains(searchText)
+            }, sort: sortDescriptors)
+        }
+    }
+    
+    var body: some View {
+        if trips.isEmpty {
+            ContentUnavailableView {
+                Label("記録なし", systemImage: "airplane.departure")
+            } description: {
+                Text("一致する旅が見つかりません")
+            }
+        } else {
+            ForEach(trips) { trip in
+                NavigationLink(value: trip) {
+                    TripRowView(trip: trip)
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        deleteTrip(trip)
+                    } label: {
+                        Label("削除", systemImage: "trash")
+                    }
+                }
+            }
+        }
+    }
+    
     private func deleteTrip(_ trip: Trip) {
         modelContext.delete(trip)
         try? modelContext.save()

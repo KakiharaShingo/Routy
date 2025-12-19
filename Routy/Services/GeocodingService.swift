@@ -44,6 +44,51 @@ class GeocodingService {
             return nil
         }
     }
+    
+    /// 座標から場所情報（名前と住所）を取得
+    /// - Parameter coordinate: CLLocationCoordinate2D
+    /// - Returns: (name: String?, address: String?)
+    func getLocationInfo(for coordinate: CLLocationCoordinate2D) async -> (name: String?, address: String?) {
+        let cacheKey = "\(coordinate.latitude),\(coordinate.longitude)"
+        
+        // 注: キャッシュは住所のみ保持しているため、ここでは単純にキャッシュヒットしても住所しか返せない
+        // ただし、整合性を保つため、キャッシュがあればそれを使うが、nameは取れない可能性がある
+        // 今回の要件（名前が欲しい）を優先し、キャッシュがあっても名前取得のために再リクエストも検討すべきだが
+        // ここでは簡単に実装する
+        
+        // レート制限を考慮
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        
+        do {
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            guard let placemark = placemarks.first else {
+                return (nil, nil)
+            }
+            
+            let address = formatAddress(from: placemark)
+            cache[cacheKey] = address
+            
+            // 名前（POI名や建物名）の取得
+            // placemark.name は「東京都港区...」のような住所を含む場合もあるが、
+            // areasOfInterestやnameが特定の建物名を示す場合がある
+            var name: String? = nil
+            
+            if let areasOfInterest = placemark.areasOfInterest, let firstInterest = areasOfInterest.first {
+                name = firstInterest
+            } else if let placeName = placemark.name, placeName != placemark.thoroughfare, placeName != placemark.subThoroughfare {
+                // nameが番地情報と一致しない場合、建物名である可能性が高い
+                name = placeName
+            }
+            
+            return (name, address)
+            
+        } catch {
+            print("[GeocodingService] エラー: \(error.localizedDescription)")
+            return (nil, nil)
+        }
+    }
 
     /// Placemarkから住所文字列をフォーマット
     /// - Parameter placemark: CLPlacemark

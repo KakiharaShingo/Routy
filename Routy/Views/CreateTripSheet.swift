@@ -96,6 +96,7 @@ struct CreateTripSheet: View {
         }
     }
 
+    @MainActor
     private func createTrip() async {
         isLoading = true
         errorMessage = nil
@@ -144,7 +145,19 @@ struct CreateTripSheet: View {
         }
 
         do {
+            // 同期フラグの設定
+            trip.markNeedsSync()
+            for checkpoint in checkpoints {
+                checkpoint.markNeedsSync()
+            }
+            
             try modelContext.save()
+            
+            // クラウドへの同期開始
+            Task {
+                await SyncManager.shared.syncAll(modelContext: modelContext)
+            }
+            
             isPresented = false
         } catch {
             errorMessage = "保存に失敗しました: \(error.localizedDescription)"

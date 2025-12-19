@@ -8,8 +8,10 @@
 import Foundation
 import Photos
 import CoreLocation
+import UIKit
 
 /// 写真ライブラリアクセスを管理するサービス
+@MainActor
 class PhotoService {
     /// 写真ライブラリの権限をリクエスト
     /// - Returns: 権限が付与されたかどうか
@@ -54,9 +56,6 @@ class PhotoService {
         }
     }
 
-    /// PHAsset配列からCheckpoint配列を生成
-    /// - Parameter assets: PHAsset配列
-    /// - Returns: Checkpoint配列
     func extractCheckpoints(from assets: [PHAsset]) async -> [Checkpoint] {
         var checkpoints: [Checkpoint] = []
 
@@ -74,5 +73,32 @@ class PhotoService {
         }
 
         return checkpoints
+    }
+    
+    /// ローカル識別子から画像を取得する
+    /// - Parameter localIdentifier: PHAssetのlocalIdentifier
+    /// - Returns: UIImage?
+    func fetchImage(for localIdentifier: String) async -> UIImage? {
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
+        guard let asset = fetchResult.firstObject else { return nil }
+        
+        return await withCheckedContinuation { continuation in
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.isNetworkAccessAllowed = true
+            options.isSynchronous = false // 非同期で処理
+            
+            PHImageManager.default().requestImage(for: asset, targetSize: PHImageManagerMaximumSize, contentMode: .aspectFit, options: options) { image, info in
+                // info[.isDegradedKey]がtrueの場合は低解像度版なので無視（完了しない）
+                // ただし、requestImageは複数回呼ばれることがある。
+                // ここでは簡単のため、画像が返ってきたらresumeする（厳密にはエラーハンドリングが必要）
+                
+                if let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool, isDegraded {
+                    return
+                }
+                
+                continuation.resume(returning: image)
+            }
+        }
     }
 }

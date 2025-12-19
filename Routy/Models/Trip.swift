@@ -27,6 +27,34 @@ class Trip {
     /// 更新日時
     var updatedAt: Date
 
+    // MARK: - Firebase Sync Properties
+    /// FirestoreドキュメントID
+    var firebaseId: String?
+    /// 同期ステータス
+    var syncStatus: SyncStatus = SyncStatus.synced
+    /// 最終同期日時
+    var lastSyncedAt: Date?
+    /// 同期が必要かどうか
+    var needsSync: Bool = false
+    
+    // MARK: - Sharing Properties
+    /// 公開設定
+    var isPublic: Bool = false
+    /// 共有先ユーザーIDリスト (CoreData error: Could not materialize Objective-C class named "Array" fix)
+    // var sharedWith: [String] = []
+
+    /// 同期済みかどうか
+    var isSynced: Bool {
+        return syncStatus == .synced && !needsSync
+    }
+    
+    /// 同期が必要であることをマークする
+    func markNeedsSync() {
+        needsSync = true
+        syncStatus = .pending
+        updatedAt = Date()
+    }
+
     /// イニシャライザ
     init(
         name: String,
