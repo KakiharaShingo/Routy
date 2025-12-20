@@ -144,7 +144,7 @@ struct TripHeaderCard: View {
             }
         }
         .padding(24)
-        .background(Color.white)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 5)
         .padding(.horizontal, 20)
@@ -183,7 +183,7 @@ struct ActionCard: View {
                 .foregroundColor(Color(.systemGray4))
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: .black.opacity(0.03), radius: 5, x: 0, y: 2)
     }

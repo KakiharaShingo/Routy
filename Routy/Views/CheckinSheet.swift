@@ -76,7 +76,7 @@ struct CheckinSheet: View {
                         }) {
                             Image(systemName: "location.fill")
                                 .padding(8)
-                                .background(Color.white)
+                                .background(Color(UIColor.secondarySystemGroupedBackground))
                                 .clipShape(Circle())
                                 .shadow(radius: 2)
                         }

@@ -234,7 +234,7 @@ struct AccountView: View {
             }
         }
         .padding(24)
-        .background(Color.white)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 5)
     }
@@ -255,7 +255,7 @@ struct AccountView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(24)
-        .background(Color.white)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .overlay(
             RoundedRectangle(cornerRadius: 24)
@@ -360,7 +360,7 @@ struct AccountView: View {
             }
         }
         .padding(24)
-        .background(Color.white)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 5)
     }
@@ -379,7 +379,7 @@ struct AccountView: View {
                 .cornerRadius(12)
         }
         .padding(24)
-        .background(Color.white)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 5)
     }
@@ -392,7 +392,7 @@ struct AccountView: View {
                 .fontWeight(.bold)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.white)
+                .background(Color(UIColor.secondarySystemGroupedBackground))
                 .foregroundColor(.red)
                 .cornerRadius(12)
                 .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)

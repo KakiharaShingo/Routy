@@ -37,7 +37,9 @@ struct JapanMapView: View {
                 width: 15 * (gridSize + spacing), // Max X is 14 (Iwate etc) -> 15 blocks width
                 height: 15 * (gridSize + spacing) // Max Y is 13 (Okinawa) -> 14 blocks height
             )
+
             .padding()
+            .padding(.top, 60) // マップ全体を下に移動
         }
     }
 }

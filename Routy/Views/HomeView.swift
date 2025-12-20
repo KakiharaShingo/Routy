@@ -144,7 +144,7 @@ struct HomeContent: View {
                         Image(systemName: "gearshape.fill")
                             .foregroundColor(.gray)
                             .padding(8)
-                            .background(Color.white)
+                            .background(Color(UIColor.secondarySystemGroupedBackground))
                             .clipShape(Circle())
                             .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
                     }
@@ -423,7 +423,7 @@ struct CustomTabBar: View {
         ZStack(alignment: .top) {
             // Bar Background
             Rectangle()
-                .fill(Color.white.opacity(0.9))
+                .fill(Color(UIColor.secondarySystemGroupedBackground).opacity(0.9))
                 .frame(height: 80)
                 .background(.ultraThinMaterial)
                 .mask(
@@ -447,7 +447,7 @@ struct CustomTabBar: View {
                 Spacer().frame(width: 80)
                 
                 // Right Tabs
-                TabBarButton(icon: "list.bullet", label: "旅ログ", isSelected: selectedTab == "trips") {
+                TabBarButton(icon: "list.bullet.rectangle", label: "旅ログ", isSelected: selectedTab == "trips") {
                     selectedTab = "trips"
                 }
                 .frame(maxWidth: .infinity)

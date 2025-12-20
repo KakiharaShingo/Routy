@@ -114,5 +114,5 @@ let japanPrefectures: [Prefecture] = [
     Prefecture(id: 44, name: "大分", region: "九州", x: 3, y: 10),
     Prefecture(id: 45, name: "宮崎", region: "九州", x: 3, y: 11),
     Prefecture(id: 46, name: "鹿児島", region: "九州", x: 2, y: 11),
-    Prefecture(id: 47, name: "沖縄", region: "沖縄", x: 0, y: 13) // かなり離す
+    Prefecture(id: 47, name: "沖縄", region: "沖縄", x: 2, y: 13)
 ]
