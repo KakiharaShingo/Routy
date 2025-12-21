@@ -18,7 +18,8 @@ struct GlobalMapView: View {
     @State private var viewModel: MapViewModel?
     @State private var showErrorAlert = false
     @State private var selectedDate: Date? // 選択中の日付（nilの場合は全期間）
-    @State private var isSheetPresented = true
+    @State private var showList = false // デフォルトは非表示（マップ優先）
+    @State private var showPhotoPopup = false // 画像ポップアップの表示状態
     
     // 日付のリストを生成
     private var availableDates: [Date] {
@@ -46,51 +47,161 @@ struct GlobalMapView: View {
                 )) {
                     ForEach(viewModel.checkpoints) { checkpoint in
                         Annotation("", coordinate: checkpoint.coordinate()) {
-                            PinAnnotation(
-                                checkpoint: checkpoint,
-                                isSelected: viewModel.selectedCheckpoint?.id == checkpoint.id
-                            )
+                            // シンプルなピン表示（画像表示なし）
+                            VStack(spacing: 0) {
+                                Circle()
+                                    .fill(checkpoint.type == .photo ? Color.blue : Color.green)
+                                    .frame(width: viewModel.selectedCheckpoint?.id == checkpoint.id ? 36 : 28,
+                                           height: viewModel.selectedCheckpoint?.id == checkpoint.id ? 36 : 28)
+                                    .overlay(
+                                        Image(systemName: checkpoint.type == .photo ? "camera.fill" : "mappin")
+                                            .font(.system(size: viewModel.selectedCheckpoint?.id == checkpoint.id ? 16 : 12))
+                                            .foregroundColor(.white)
+                                    )
+                                    .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+
+                                PinTriangle()
+                                    .fill(checkpoint.type == .photo ? Color.blue : Color.green)
+                                    .frame(width: viewModel.selectedCheckpoint?.id == checkpoint.id ? 12 : 8,
+                                           height: viewModel.selectedCheckpoint?.id == checkpoint.id ? 12 : 8)
+                                    .offset(y: -1)
+                            }
+                            .scaleEffect(viewModel.selectedCheckpoint?.id == checkpoint.id ? 1.2 : 1.0)
+                            .animation(.spring(response: 0.3), value: viewModel.selectedCheckpoint?.id == checkpoint.id)
+                            .onTapGesture {
+                                withAnimation {
+                                    viewModel.selectCheckpoint(checkpoint)
+                                    showPhotoPopup = true
+                                }
+                            }
                         }
                         .tag(checkpoint.id)
                     }
                 }
                 .mapStyle(.standard)
-                .ignoresSafeArea()
+
+                // 選択されたピンの上に画像を表示
+                if showPhotoPopup, let selectedCheckpoint = viewModel.selectedCheckpoint {
+                    ZStack {
+                        // 背景タップで閉じる
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation {
+                                    showPhotoPopup = false
+                                }
+                            }
+
+                        GeometryReader { geometry in
+                            VStack(spacing: 8) {
+                                // 大きな画像
+                                if let assetID = selectedCheckpoint.photoAssetID {
+                                    PhotoAssetView(assetID: assetID)
+                                        .frame(width: 200, height: 200)
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                        .shadow(radius: 10)
+                                } else if let url = selectedCheckpoint.photoThumbnailURL, let imageURL = URL(string: url) {
+                                    AsyncImage(url: imageURL) { image in
+                                        image.resizable().scaledToFill()
+                                    } placeholder: {
+                                        ProgressView()
+                                    }
+                                    .frame(width: 200, height: 200)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .shadow(radius: 10)
+                                } else {
+                                    ZStack {
+                                        Color(.systemGray6)
+                                        Image(systemName: "photo")
+                                            .font(.largeTitle)
+                                            .foregroundColor(.gray)
+                                    }
+                                    .frame(width: 200, height: 200)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .shadow(radius: 10)
+                                }
+
+                                // 情報カード
+                                VStack(spacing: 4) {
+                                    Text(selectedCheckpoint.name ?? "スポット")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+
+                                    Text(DateFormatter.japaneseDateTime.string(from: selectedCheckpoint.timestamp))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .frame(width: 200)
+                                .background(Color(UIColor.systemBackground))
+                                .cornerRadius(10)
+                                .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
+                            }
+                            .position(x: geometry.size.width / 2, y: 150)
+                            .transition(.scale.combined(with: .opacity))
+                        }
+                        .allowsHitTesting(false)
+                    }
+                    .zIndex(100)
+                }
                 
-                // カスタムボトムカード（リスト）
-                if isSheetPresented {
-                    VStack {
+                // リスト表示/非表示ボタン
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            withAnimation(.spring()) {
+                                showList.toggle()
+                            }
+                        }) {
+                            Image(systemName: showList ? "map" : "list.bullet")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 50, height: 50)
+                                .background(Color.blue)
+                                .clipShape(Circle())
+                                .shadow(radius: 6)
+                        }
+                        .padding(.trailing, 24)
+                        // リストが表示されているときは、リストの分だけ上にずらす、そうでなければタブバーの少し上
+                        .padding(.bottom, showList ? 270 : 100)
+                    }
+                }
+                .zIndex(2) // シートより上に表示
+                
+                // カスタムボトムシート（リスト表示）
+                if showList {
+                    VStack(spacing: 0) {
                         Spacer()
                         
                         VStack(spacing: 0) {
-                            // 上部のグラバーとタイトル
-                            HStack {
-                                Spacer()
-                                Capsule()
-                                    .fill(Color.gray.opacity(0.3))
-                                    .frame(width: 36, height: 5)
-                                Spacer()
-                            }
-                            .padding(.top, 10)
-                            .padding(.bottom, 5)
-                            
+                            // 情報バー (閉じるボタン含む)
                             HStack {
                                 Text("記録一覧")
-                                    .font(.headline)
+                                    .font(.subheadline)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.secondary)
+                                
                                 Spacer()
+                                
                                 Button(action: {
                                     withAnimation {
-                                        isSheetPresented = false
+                                        showList = false
                                     }
                                 }) {
                                     Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.gray)
+                                        .foregroundColor(Color(.systemGray3))
+                                        .font(.title3)
                                 }
                             }
-                            .padding(.horizontal)
-                            .padding(.bottom, 10)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+                            .padding(.bottom, 8)
                             
-                            // 日付フィルター
+                            // フィルター (横スクロール)
                             if !availableDates.isEmpty {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 8) {
@@ -109,97 +220,113 @@ struct GlobalMapView: View {
                                             }
                                         }
                                     }
-                                    .padding(.horizontal)
-                                    .padding(.bottom, 10)
+                                    .padding(.horizontal, 20)
                                 }
+                                .padding(.bottom, 10)
                             }
                             
-                            // チェックポイント一覧
+                            // リスト (縦スクロール)
                             if viewModel.checkpoints.isEmpty {
                                 ContentUnavailableView("データがありません", systemImage: "mappin.slash")
-                                    .frame(height: 150)
+                                    .frame(height: 120)
                             } else {
                                 ScrollViewReader { proxy in
-                                    List(viewModel.checkpoints) { checkpoint in
-                                        NavigationLink(destination: CheckpointDetailView(checkpoint: checkpoint)) {
-                                            HStack {
-                                                VStack(alignment: .leading, spacing: 4) {
-                                                    Text(DateFormatter.japaneseDateTime.string(from: checkpoint.timestamp))
-                                                        .font(.caption)
-                                                        .foregroundColor(.secondary)
-                                                    
-                                                    Text(checkpoint.name ?? checkpoint.address ?? "場所不明")
-                                                        .font(.body)
-                                                        .fontWeight(.medium)
-                                                        .lineLimit(2)
+                                    List {
+                                        ForEach(viewModel.checkpoints) { checkpoint in
+                                            HStack(spacing: 12) {
+                                            // サムネイル
+                                            if let assetID = checkpoint.photoAssetID {
+                                                PhotoThumbnail(assetID: assetID, size: CGSize(width: 44, height: 44))
+                                                    .aspectRatio(contentMode: .fill)
+                                                    .frame(width: 44, height: 44)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            } else if let url = checkpoint.photoThumbnailURL, let imageURL = URL(string: url) {
+                                                AsyncImage(url: imageURL) { image in
+                                                    image.resizable().aspectRatio(contentMode: .fill)
+                                                } placeholder: {
+                                                    Color.gray.opacity(0.3)
                                                 }
+                                                .frame(width: 44, height: 44)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            } else {
+                                                ZStack {
+                                                    Color(.systemGray6)
+                                                    Image(systemName: "mappin")
+                                                        .font(.caption2)
+                                                        .foregroundColor(.gray)
+                                                }
+                                                .frame(width: 44, height: 44)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            }
+                                            
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(checkpoint.name ?? "スポット")
+                                                    .font(.system(size: 13, weight: .semibold))
+                                                    .foregroundColor(.primary)
+                                                    .lineLimit(1)
                                                 
-                                                if viewModel.selectedCheckpoint?.id == checkpoint.id {
-                                                    Spacer()
-                                                    Image(systemName: "checkmark.circle.fill")
-                                                        .foregroundColor(.blue)
+                                                Text(DateFormatter.japaneseDateTime.string(from: checkpoint.timestamp))
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            if viewModel.selectedCheckpoint?.id == checkpoint.id {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .foregroundColor(.blue)
+                                                    .font(.caption)
+                                            }
+                                        }
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            withAnimation {
+                                                viewModel.selectCheckpoint(checkpoint)
+                                                // リストが表示されているときは画像も表示
+                                                if showList {
+                                                    showPhotoPopup = true
                                                 }
                                             }
                                         }
+                                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                        .listRowBackground(
+                                            viewModel.selectedCheckpoint?.id == checkpoint.id
+                                                ? Color.blue.opacity(0.1)
+                                                : Color(UIColor.secondarySystemGroupedBackground)
+                                        )
                                         .id(checkpoint.id)
-                                        .listRowBackground(viewModel.selectedCheckpoint?.id == checkpoint.id ? Color.blue.opacity(0.1) : nil)
-                                        .onTapGesture {
-                                            viewModel.selectCheckpoint(checkpoint)
-                                        }
+                                    }
                                     }
                                     .listStyle(.plain)
-                                    .frame(height: 250) // リストの高さ制限
-                                    .onChange(of: viewModel.selectedCheckpoint) { _, newCheckpoint in
-                                        if let checkpoint = newCheckpoint {
+                                    .frame(height: 200)
+                                    .onAppear {
+                                        // リスト表示時に選択されたアイテムまでスクロール
+                                        if let selectedId = viewModel.selectedCheckpoint?.id {
                                             withAnimation {
-                                                proxy.scrollTo(checkpoint.id, anchor: .center)
+                                                proxy.scrollTo(selectedId, anchor: .center)
+                                            }
+                                        }
+                                    }
+                                    .onChange(of: viewModel.selectedCheckpoint?.id) { _, newId in
+                                        // 選択が変わったときにスクロール
+                                        if let newId = newId {
+                                            withAnimation {
+                                                proxy.scrollTo(newId, anchor: .center)
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                        .background(Color(.systemBackground))
-                        .cornerRadius(20)
-                        .shadow(radius: 10)
-                        .padding(.horizontal)
-                        .padding(.bottom, 96) // タブバー分の余白
+                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        .cornerRadius(24) // 角丸を強める
+                        .shadow(color: .black.opacity(0.15), radius: 15, y: -2)
+                        .padding(.horizontal, 16) // 左右に余白を持たせて「浮いている」感を出す
+                        .padding(.bottom, 90) // TabBarの高さ分
                     }
-                    .transition(.move(edge: .bottom))
-                } else {
-                    // シート再表示ボタン
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            Button(action: {
-                                withAnimation {
-                                    isSheetPresented = true
-                                }
-                            }) {
-                                Image(systemName: "list.bullet")
-                                    .font(.title2)
-                                    .foregroundColor(.white)
-                                    .padding()
-                                    .background(Color.blue)
-                                    .clipShape(Circle())
-                                    .shadow(radius: 4)
-                            }
-                            .padding(.trailing, 20)
-                            .padding(.bottom, 110) // タブバー分の余白
-                        }
-                    }
-                }
-                
-                // ローディング表示
-                if viewModel.isLoading {
-                    Color.black.opacity(0.3)
-                        .ignoresSafeArea()
-                    
-                    ProgressView("読み込み中...")
-                        .padding()
-                        .background(.ultraThinMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(1)
+                    .ignoresSafeArea(edges: .bottom)
                 }
             } else {
                 ProgressView()
@@ -220,7 +347,6 @@ struct GlobalMapView: View {
             if viewModel == nil {
                 viewModel = MapViewModel(modelContext: modelContext)
             }
-            // 初期データセット
             updateFilteredCheckpoints()
         }
         .onChange(of: allCheckpoints) { _, _ in
@@ -244,6 +370,73 @@ struct GlobalMapView: View {
         viewModel.centerMapOnCheckpoints()
     }
 }
+
+/// カルーセル用のカードビュー
+struct CheckpointCard: View {
+    let checkpoint: Checkpoint
+    let isSelected: Bool
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // サムネイル
+            if let assetID = checkpoint.photoAssetID {
+                PhotoThumbnail(assetID: assetID, size: CGSize(width: 80, height: 80))
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 80, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else if let url = checkpoint.photoThumbnailURL, let imageURL = URL(string: url) {
+                AsyncImage(url: imageURL) { image in
+                     image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                     Color.gray.opacity(0.3)
+                }
+                .frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                ZStack {
+                    Color(.systemGray6)
+                    Image(systemName: "mappin.and.ellipse")
+                        .foregroundColor(.gray)
+                }
+                .frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            
+            // 情報
+            VStack(alignment: .leading, spacing: 4) {
+                Text(checkpoint.name ?? "スポット")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                
+                Text(DateFormatter.japaneseDateTime.string(from: checkpoint.timestamp))
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray)
+                
+                if let address = checkpoint.address {
+                    Text(address)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 140) // テキスト幅固定
+            
+            Spacer()
+        }
+        .padding(10)
+        .background(Color(UIColor.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: isSelected ? .blue.opacity(0.3) : .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        .scaleEffect(isSelected ? 1.05 : 1.0)
+        .animation(.spring(response: 0.3), value: isSelected)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
+        )
+    }
+}
+
 
 /// フィルター用チップ
 struct FilterChip: View {
@@ -388,6 +581,18 @@ struct CheckpointDetailView: View {
                 isLoadingImage = false
             }
         }
+    }
+}
+
+/// ピン用三角形のShape
+struct PinTriangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.closeSubpath()
+        return path
     }
 }
 

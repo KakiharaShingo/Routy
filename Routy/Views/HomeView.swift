@@ -46,19 +46,23 @@ struct HomeView: View {
                             showCreateTrip: $showCreateTrip,
                             selectedTab: $selectedTab
                         )
+                        .padding(.bottom, 90) // Add padding for TabBar
                         .transition(.opacity)
                     } else if selectedTab == "map" {
                         GlobalMapView()
+                            // Map extends to bottom, no padding needed for the view itself
                             .transition(.opacity)
                     } else if selectedTab == "trips" {
                         TripListContent(searchText: $searchText)
+                            .padding(.bottom, 90) // Add padding for TabBar
                             .transition(.opacity)
                     } else if selectedTab == "profile" {
                         AccountView()
+                            .padding(.bottom, 90) // Add padding for TabBar
                             .transition(.opacity)
                     }
                 }
-                .padding(.bottom, 90) // Space for TabBar
+                // Removed global padding(.bottom, 90) to allow Map to extend fully
                 
                 // Custom Tab Bar
                 CustomTabBar(selectedTab: $selectedTab, showCheckinSheet: $showCheckinSheet)

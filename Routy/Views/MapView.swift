@@ -108,6 +108,55 @@ struct MapView: View {
                 } else {
                     ProgressView()
                 }
+                
+                // MARK: - Photo Popup Overlay
+                if let viewModel = viewModel, let cp = viewModel.selectedCheckpoint {
+                    ZStack {
+                        Color.black.opacity(0.4)
+                            .edgesIgnoringSafeArea(.all)
+                            .onTapGesture {
+                                withAnimation {
+                                    viewModel.selectedCheckpoint = nil
+                                }
+                            }
+                        
+                        VStack(spacing: 12) {
+                            if let assetID = cp.photoAssetID {
+                                PhotoAssetView(assetID: assetID)
+                                    .frame(width: 250, height: 250)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .shadow(radius: 10)
+                            } else if let url = cp.photoURL, let imageURL = URL(string: url) {
+                                AsyncImage(url: imageURL) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: {
+                                    ProgressView()
+                                }
+                                .frame(width: 250, height: 250)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } else {
+                                Image(systemName: "photo")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 100, height: 100)
+                                    .foregroundColor(.gray)
+                                    .frame(width: 250, height: 250)
+                                    .background(Color.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            
+                            Text(cp.name ?? "Checkpoint")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Material.ultraThin)
+                                .cornerRadius(8)
+                        }
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                    .zIndex(100)
+                }
             }
 
             .navigationTitle(trip?.name ?? "TravelLog")

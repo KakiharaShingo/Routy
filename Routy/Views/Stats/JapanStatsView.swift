@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import CoreLocation
+import Photos
 
 struct JapanStatsView: View {
     @Environment(\.modelContext) private var modelContext
@@ -206,16 +207,19 @@ struct JapanStatsView: View {
         Task {
             // ローディング開始
             await MainActor.run { isLoading = true }
-            
+
             // 1. 各都道府県ごとの訪問日（0時0分基準）を記録
             var prefectureDates: [Int: Set<Date>] = [:]
-            
+
             let calendar = Calendar.current
             let geocoder = CLGeocoder()
-            
+
+            // 写真アセットから位置情報を取得して更新
+            await updatePhotoLocations()
+
             // 処理が必要なチェックポイントを抽出（住所なし・座標あり）
-            let checkpointsToProcess = checkpoints.filter { 
-                ($0.address == nil || $0.address!.isEmpty) && $0.latitude != 0 && $0.longitude != 0 
+            let checkpointsToProcess = checkpoints.filter {
+                ($0.address == nil || $0.address!.isEmpty) && $0.latitude != 0 && $0.longitude != 0
             }
             
             // 座標でのグルーピング（近接地点をまとめて1回だけリクエストする）
@@ -373,15 +377,41 @@ struct JapanStatsView: View {
         if let pref = japanPrefectures.first(where: { address.contains($0.name) }) {
             // ロックされている都道府県はスキップ
             if lockedStats[pref.id] == true { return }
-            
+
             // 日付を0時0分に正規化
             let startOfDay = calendar.startOfDay(for: date)
-            
+
             if prefectureDates[pref.id] == nil {
                 prefectureDates[pref.id] = []
             }
             prefectureDates[pref.id]?.insert(startOfDay)
         }
+    }
+
+    // 写真アセットから位置情報を取得してチェックポイントを更新
+    @MainActor
+    private func updatePhotoLocations() async {
+        let checkpointsWithPhotos = checkpoints.filter {
+            $0.photoAssetID != nil && ($0.latitude == 0 || $0.longitude == 0)
+        }
+
+        guard !checkpointsWithPhotos.isEmpty else { return }
+
+        for checkpoint in checkpointsWithPhotos {
+            guard let assetID = checkpoint.photoAssetID else { continue }
+
+            let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil)
+            guard let asset = fetchResult.firstObject else { continue }
+
+            // 位置情報を取得
+            if let location = asset.location {
+                checkpoint.latitude = location.coordinate.latitude
+                checkpoint.longitude = location.coordinate.longitude
+            }
+        }
+
+        // 変更を保存
+        try? modelContext.save()
     }
 }
 

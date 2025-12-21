@@ -39,8 +39,17 @@ struct PinAnnotation: View {
                     .offset(y: -1)
             }
         }
+
         .scaleEffect(isSelected ? 1.2 : 1.0)
+        .overlay(alignment: .top) {
+            if isSelected {
+                CalloutView(checkpoint: checkpoint)
+                    .offset(y: -250) // ピンの上に表示（画像が大きくなったので調整）
+                    .transition(.scale.combined(with: .opacity).animation(.spring(duration: 0.2)))
+            }
+        }
         .animation(.spring(response: 0.3), value: isSelected)
+        .zIndex(isSelected ? 100 : 0) // 選択されたピンを最前面に
     }
 
     private var pinColor: Color {
@@ -58,6 +67,63 @@ struct PinAnnotation: View {
             return "camera.fill"
         case .manualCheckin:
             return "mappin"
+        }
+    }
+}
+
+struct CalloutView: View {
+    let checkpoint: Checkpoint
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // 大きな画像
+            if let assetID = checkpoint.photoAssetID {
+                PhotoAssetView(assetID: assetID)
+                    .frame(width: 200, height: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else if let url = checkpoint.photoThumbnailURL, let imageURL = URL(string: url) {
+                AsyncImage(url: imageURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    ProgressView()
+                }
+                .frame(width: 200, height: 200)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                ZStack {
+                    Color(.systemGray6)
+                    Image(systemName: "photo")
+                        .font(.largeTitle)
+                        .foregroundColor(.gray)
+                }
+                .frame(width: 200, height: 200)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+
+            // 情報カード
+            VStack(spacing: 4) {
+                Text(checkpoint.name ?? "スポット")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                Text(DateFormatter.japaneseDateTime.string(from: checkpoint.timestamp))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(width: 200)
+            .background(Color(UIColor.systemBackground))
+            .cornerRadius(10)
+            .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
+
+            // 吹き出しの三角
+            Triangle()
+                .fill(Color(UIColor.systemBackground))
+                .frame(width: 14, height: 10)
+                .rotationEffect(.degrees(180))
+                .offset(y: -1)
         }
     }
 }
