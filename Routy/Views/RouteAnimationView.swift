@@ -19,6 +19,7 @@ struct RouteAnimationView: View {
     @State private var showExportOptions = false
     @State private var selectedCheckpoint: Checkpoint? // For Photo Popup
     @State private var cameraFollowEnabled = true // カメラ追跡ON/OFF
+    @State private var currentDateString: String? // For Date Popup
 
     init(checkpoints: [Checkpoint]) {
         self.checkpoints = checkpoints
@@ -38,6 +39,7 @@ struct RouteAnimationView: View {
                 animationSpeed: $viewModel.animationSpeed,
                 currentCoordinate: $viewModel.currentCoordinate,
                 selectedCheckpoint: $selectedCheckpoint,
+                currentDateString: $currentDateString,
                 cameraFollowEnabled: $cameraFollowEnabled,
                 videoManager: videoManager
             )
@@ -314,6 +316,28 @@ struct RouteAnimationView: View {
                     .allowsHitTesting(false)
                 }
                 .zIndex(200) // Above everything
+            }
+
+            // MARK: - Date Popup (Date Change)
+            if let dateStr = currentDateString {
+                VStack {
+                    HStack {
+                        Text(dateStr)
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .background(
+                                Capsule()
+                                    .fill(Color.blue.opacity(0.9))
+                                    .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
+                            )
+                    }
+                    .padding(.top, 80)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(250) // Above photo popup
             }
         }
         .onDisappear {

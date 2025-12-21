@@ -9,7 +9,8 @@
       "Bash(pip3 install:*)",
       "Bash(xcrun simctl:*)",
       "Bash(tr:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(grep:*)"
     ]
   }
 }

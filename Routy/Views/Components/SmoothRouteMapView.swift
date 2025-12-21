@@ -13,6 +13,7 @@ struct SmoothRouteMapView: UIViewRepresentable {
     @Binding var animationSpeed: Double
     @Binding var currentCoordinate: CLLocationCoordinate2D?
     @Binding var selectedCheckpoint: Checkpoint?
+    @Binding var currentDateString: String?
     @Binding var cameraFollowEnabled: Bool
 
     // Video Generation
@@ -102,6 +103,7 @@ struct SmoothRouteMapView: UIViewRepresentable {
         private var lastMarkerCoordinate: CLLocationCoordinate2D?
         private var lastCameraCoordinate: CLLocationCoordinate2D?
         private var lastReachedCheckpointIndex: Int = -1 // Track last reached checkpoint
+        private var lastDisplayedDate: String? // Track last displayed date
 
         // Control
         private var displayLink: CADisplayLink?
@@ -219,6 +221,7 @@ struct SmoothRouteMapView: UIViewRepresentable {
                 currentAnimDistance = 0
                 lastCameraCoordinate = nil // Reset camera tracking
                 lastReachedCheckpointIndex = -1 // Reset checkpoint tracking
+                lastDisplayedDate = nil // Reset date tracking
 
                 // Set initial camera if follow is enabled
                 if parent.cameraFollowEnabled, let first = fullRoutePoints.first {
@@ -235,6 +238,25 @@ struct SmoothRouteMapView: UIViewRepresentable {
                     // This handles Scrubbing.
                     if abs(expectedDist - currentAnimDistance) > 10.0 {
                         currentAnimDistance = expectedDist
+
+                        // Reset checkpoint and date tracking when scrubbing
+                        lastReachedCheckpointIndex = -1
+                        lastDisplayedDate = nil
+
+                        // Re-calculate which checkpoints should be marked as passed
+                        for i in 0..<checkpointDistances.count {
+                            if checkpointDistances[i] < currentAnimDistance {
+                                lastReachedCheckpointIndex = i
+
+                                // Update last displayed date to the last passed checkpoint's date
+                                let checkpoint = parent.checkpoints[i]
+                                let dateFormatter = DateFormatter()
+                                dateFormatter.dateFormat = "yyyy年M月d日"
+                                dateFormatter.locale = Locale(identifier: "ja_JP")
+                                lastDisplayedDate = dateFormatter.string(from: checkpoint.timestamp)
+                            }
+                        }
+
                         updateMapState()
                     }
                 }
@@ -252,6 +274,29 @@ struct SmoothRouteMapView: UIViewRepresentable {
             lastTimestamp = CACurrentMediaTime()
             displayLink = CADisplayLink(target: self, selector: #selector(step))
             displayLink?.add(to: .main, forMode: .common)
+
+            // Show date popup at start if it's the beginning (progress near 0)
+            if currentAnimDistance < 10.0 && parent.checkpoints.count > 0 && lastDisplayedDate == nil {
+                let firstCheckpoint = parent.checkpoints[0]
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy年M月d日"
+                dateFormatter.locale = Locale(identifier: "ja_JP")
+                let dateStr = dateFormatter.string(from: firstCheckpoint.timestamp)
+
+                lastDisplayedDate = dateStr
+                DispatchQueue.main.async {
+                    withAnimation {
+                        self.parent.currentDateString = dateStr
+                    }
+                }
+
+                // Auto-hide after 2 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    withAnimation {
+                        self.parent.currentDateString = nil
+                    }
+                }
+            }
         }
         
         private func stopAnimation() {
@@ -398,23 +443,59 @@ struct SmoothRouteMapView: UIViewRepresentable {
                     lastReachedCheckpointIndex = i
                     let checkpoint = parent.checkpoints[i]
 
-                    print("🎯 Reached checkpoint \(i): \(checkpoint.name ?? "Unnamed") at distance \(currentDistance)m (target: \(checkpointDistance)m)")
-
-                    // Pause animation
-                    DispatchQueue.main.async {
-                        self.parent.isPlaying = false
-                        self.parent.selectedCheckpoint = checkpoint
-                    }
+                    // Check if date has changed
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "yyyy年M月d日"
+                    dateFormatter.locale = Locale(identifier: "ja_JP")
+                    let currentDateStr = dateFormatter.string(from: checkpoint.timestamp)
 
                     // Stop the display link
                     stopAnimation()
 
-                    // Auto-resume after 3 seconds
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                        if self.parent.selectedCheckpoint?.id == checkpoint.id {
-                            self.parent.selectedCheckpoint = nil
-                            self.parent.isPlaying = true
-                            self.startAnimation()
+                    if lastDisplayedDate != currentDateStr {
+                        // Date changed - show date popup first (2s) then photo (2s)
+                        lastDisplayedDate = currentDateStr
+                        DispatchQueue.main.async {
+                            withAnimation {
+                                self.parent.currentDateString = currentDateStr
+                            }
+                        }
+
+                        // Auto-hide date popup after 2 seconds
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            withAnimation {
+                                self.parent.currentDateString = nil
+                            }
+
+                            // Show photo popup after date popup disappears
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                self.parent.isPlaying = false
+                                self.parent.selectedCheckpoint = checkpoint
+
+                                // Auto-resume after 2 seconds (photo display time)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                                    if self.parent.selectedCheckpoint?.id == checkpoint.id {
+                                        self.parent.selectedCheckpoint = nil
+                                        self.parent.isPlaying = true
+                                        self.startAnimation()
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Same date - show photo popup immediately (2s)
+                        DispatchQueue.main.async {
+                            self.parent.isPlaying = false
+                            self.parent.selectedCheckpoint = checkpoint
+                        }
+
+                        // Auto-resume after 2 seconds
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            if self.parent.selectedCheckpoint?.id == checkpoint.id {
+                                self.parent.selectedCheckpoint = nil
+                                self.parent.isPlaying = true
+                                self.startAnimation()
+                            }
                         }
                     }
                     break

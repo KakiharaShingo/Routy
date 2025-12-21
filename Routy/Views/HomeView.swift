@@ -53,7 +53,7 @@ struct HomeView: View {
                             // Map extends to bottom, no padding needed for the view itself
                             .transition(.opacity)
                     } else if selectedTab == "trips" {
-                        TripListContent(searchText: $searchText)
+                        TripListTabView(searchText: $searchText)
                             .padding(.bottom, 90) // Add padding for TabBar
                             .transition(.opacity)
                     } else if selectedTab == "profile" {
@@ -299,19 +299,23 @@ struct TripListContent: View {
     @Binding var searchText: String
     var limit: Int? = nil
     var isScrollable: Bool = true
-    
+
     @Environment(\.modelContext) private var modelContext
     @Query private var trips: [Trip]
-    
+
+    @State private var editMode: EditMode = .inactive
+    @State private var selectedTrips: Set<PersistentIdentifier> = []
+    @State private var showDeleteConfirmation = false
+
     init(searchText: Binding<String>, limit: Int? = nil, isScrollable: Bool = true) {
         self._searchText = searchText
         self.limit = limit
         self.isScrollable = isScrollable
-        
+
         let sortDescriptors = [SortDescriptor(\Trip.startDate, order: .reverse)]
-        _trips = Query(sort: sortDescriptors) 
+        _trips = Query(sort: sortDescriptors)
     }
-    
+
     var filteredTrips: [Trip] {
         let all = trips
         let filtered = searchText.isEmpty ? all : all.filter { $0.name.localizedStandardContains(searchText) }
@@ -320,22 +324,65 @@ struct TripListContent: View {
         }
         return filtered
     }
-    
+
     var body: some View {
-        if isScrollable {
-            ScrollView {
-                LazyVStack(spacing: 16) {
+        Group {
+            if isScrollable {
+                ScrollView {
+                    LazyVStack(spacing: 16) {
+                        listContent
+                    }
+                    .padding(24)
+                }
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    if limit == nil {
+                        tripListToolbar
+                    }
+                }
+            } else {
+                VStack(spacing: 16) {
                     listContent
                 }
-                .padding(24)
             }
-        } else {
-            VStack(spacing: 16) {
-                listContent
+        }
+        .environment(\.editMode, $editMode)
+        .confirmationDialog("選択した旅の記録を削除しますか？", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
+            Button("削除", role: .destructive) {
+                deleteSelectedTrips()
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("\(selectedTrips.count)件の旅の記録とすべてのチェックポイントが削除されます。この操作は取り消せません。")
+        }
+    }
+
+    @ToolbarContentBuilder
+    var tripListToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            if editMode == .active {
+                Button("完了") {
+                    editMode = .inactive
+                    selectedTrips.removeAll()
+                }
+            } else {
+                Button("編集") {
+                    editMode = .active
+                }
+            }
+        }
+
+        if editMode == .active && !selectedTrips.isEmpty {
+            ToolbarItem(placement: .bottomBar) {
+                Button(role: .destructive, action: {
+                    showDeleteConfirmation = true
+                }) {
+                    Label("削除 (\(selectedTrips.count))", systemImage: "trash")
+                }
             }
         }
     }
-    
+
     var listContent: some View {
         Group {
             // Empty State Check
@@ -352,19 +399,60 @@ struct TripListContent: View {
                  .padding(.top, 40)
             } else {
                 ForEach(filteredTrips, id: \.persistentModelID) { trip in
-                    NavigationLink(value: trip) {
-                        TripCardView(trip: trip)
+                    HStack {
+                        if editMode == .active {
+                            Image(systemName: selectedTrips.contains(trip.persistentModelID) ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(selectedTrips.contains(trip.persistentModelID) ? .blue : .gray)
+                                .onTapGesture {
+                                    toggleSelection(trip)
+                                }
+                        }
+
+                        NavigationLink(value: trip) {
+                            TripCardView(trip: trip)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(editMode == .active)
+                        .onTapGesture {
+                            if editMode == .active {
+                                toggleSelection(trip)
+                            }
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
+    }
+
+    private func toggleSelection(_ trip: Trip) {
+        if selectedTrips.contains(trip.persistentModelID) {
+            selectedTrips.remove(trip.persistentModelID)
+        } else {
+            selectedTrips.insert(trip.persistentModelID)
+        }
+    }
+
+    private func deleteSelectedTrips() {
+        for tripID in selectedTrips {
+            if let trip = trips.first(where: { $0.persistentModelID == tripID }) {
+                modelContext.delete(trip)
+            }
+        }
+
+        do {
+            try modelContext.save()
+        } catch {
+            print("Error deleting trips: \(error)")
+        }
+
+        selectedTrips.removeAll()
+        editMode = .inactive
     }
 }
 
 struct TripCardView: View {
     let trip: Trip
-    
+
     var body: some View {
         HStack(spacing: 16) {
             // Thumbnail
@@ -416,6 +504,162 @@ struct TripCardView: View {
         .background(Color(UIColor.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
+    }
+}
+
+/// 旅の記録タブ専用ビュー（検索バーと編集機能付き）
+struct TripListTabView: View {
+    @Binding var searchText: String
+
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Trip.startDate, order: .reverse) private var trips: [Trip]
+
+    @State private var editMode: EditMode = .inactive
+    @State private var selectedTrips: Set<PersistentIdentifier> = []
+    @State private var showDeleteConfirmation = false
+
+    var filteredTrips: [Trip] {
+        searchText.isEmpty ? trips : trips.filter { $0.name.localizedStandardContains(searchText) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header with search and edit button
+            VStack(spacing: 12) {
+                HStack {
+                    Text("旅の記録")
+                        .font(.system(size: 28, weight: .bold))
+
+                    Spacer()
+
+                    if editMode == .active {
+                        Button("完了") {
+                            editMode = .inactive
+                            selectedTrips.removeAll()
+                        }
+                        .font(.system(size: 16, weight: .medium))
+                    } else {
+                        Button("編集") {
+                            editMode = .active
+                        }
+                        .font(.system(size: 16, weight: .medium))
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+
+                // Search Bar
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.gray)
+                    TextField("旅を検索", text: $searchText)
+                        .textFieldStyle(.plain)
+                }
+                .padding(12)
+                .background(Color(UIColor.secondarySystemGroupedBackground))
+                .cornerRadius(12)
+                .padding(.horizontal, 24)
+            }
+            .padding(.bottom, 12)
+            .background(Color(UIColor.systemGroupedBackground))
+
+            // Trip List
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    if trips.isEmpty {
+                        VStack(spacing: 20) {
+                            Image(systemName: "airplane.departure")
+                                .font(.system(size: 50))
+                                .foregroundColor(.gray.opacity(0.5))
+                            Text("旅の記録がまだありません")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                    } else {
+                        ForEach(filteredTrips, id: \.persistentModelID) { trip in
+                            HStack {
+                                if editMode == .active {
+                                    Image(systemName: selectedTrips.contains(trip.persistentModelID) ? "checkmark.circle.fill" : "circle")
+                                        .foregroundColor(selectedTrips.contains(trip.persistentModelID) ? .blue : .gray)
+                                        .font(.system(size: 24))
+                                        .onTapGesture {
+                                            toggleSelection(trip)
+                                        }
+                                }
+
+                                NavigationLink(value: trip) {
+                                    TripCardView(trip: trip)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(editMode == .active)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if editMode == .active {
+                                        toggleSelection(trip)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(24)
+            }
+
+            // Delete button bar
+            if editMode == .active && !selectedTrips.isEmpty {
+                HStack {
+                    Button(role: .destructive, action: {
+                        showDeleteConfirmation = true
+                    }) {
+                        Label("削除 (\(selectedTrips.count))", systemImage: "trash")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red)
+                            .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
+                .background(Color(UIColor.systemGroupedBackground))
+            }
+        }
+        .confirmationDialog("選択した旅の記録を削除しますか？", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
+            Button("削除", role: .destructive) {
+                deleteSelectedTrips()
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("\(selectedTrips.count)件の旅の記録とすべてのチェックポイントが削除されます。この操作は取り消せません。")
+        }
+    }
+
+    private func toggleSelection(_ trip: Trip) {
+        if selectedTrips.contains(trip.persistentModelID) {
+            selectedTrips.remove(trip.persistentModelID)
+        } else {
+            selectedTrips.insert(trip.persistentModelID)
+        }
+    }
+
+    private func deleteSelectedTrips() {
+        for tripID in selectedTrips {
+            if let trip = trips.first(where: { $0.persistentModelID == tripID }) {
+                modelContext.delete(trip)
+            }
+        }
+
+        do {
+            try modelContext.save()
+        } catch {
+            print("Error deleting trips: \(error)")
+        }
+
+        selectedTrips.removeAll()
+        editMode = .inactive
     }
 }
 
