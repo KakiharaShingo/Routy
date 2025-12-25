@@ -28,28 +28,10 @@ struct MapView: View {
     }
 
     var body: some View {
-        // NavigationStack { // Removed nested NavigationStack
-            ZStack {
-                if let viewModel = viewModel {
-                    // 地図
-                    Map(position: Binding(
-                        get: { viewModel.cameraPosition },
-                        set: { viewModel.cameraPosition = $0 }
-                    )) {
-                        ForEach(viewModel.checkpoints) { checkpoint in
-                            Annotation("", coordinate: checkpoint.coordinate()) {
-                                PinAnnotation(
-                                    checkpoint: checkpoint,
-                                    isSelected: viewModel.selectedCheckpoint?.id == checkpoint.id
-                                )
-                                .onTapGesture {
-                                    viewModel.selectCheckpoint(checkpoint)
-                                }
-                            }
-                        }
-                    }
-                    .mapStyle(.standard)
-
+        ZStack {
+            if let viewModel = viewModel {
+                mapContent(viewModel: viewModel)
+                    
                     // ボトムバー
                     VStack {
                         Spacer()
@@ -95,6 +77,18 @@ struct MapView: View {
                         .padding()
                     }
 
+                    // CalloutViewのオーバーレイ
+                    if let selectedGroup = viewModel.selectedGroup {
+                        GeometryReader { geometry in
+                            CalloutView(group: selectedGroup)
+                                .position(x: geometry.size.width / 2, y: geometry.size.height / 3)
+                                .transition(.scale.combined(with: .opacity))
+                                .id(selectedGroup.id)
+                        }
+                        .allowsHitTesting(true)
+                        .zIndex(100)
+                    }
+
                     // ローディング表示
                     if viewModel.isLoading {
                         Color.black.opacity(0.3)
@@ -107,55 +101,6 @@ struct MapView: View {
                     }
                 } else {
                     ProgressView()
-                }
-                
-                // MARK: - Photo Popup Overlay
-                if let viewModel = viewModel, let cp = viewModel.selectedCheckpoint {
-                    ZStack {
-                        Color.black.opacity(0.4)
-                            .edgesIgnoringSafeArea(.all)
-                            .onTapGesture {
-                                withAnimation {
-                                    viewModel.selectedCheckpoint = nil
-                                }
-                            }
-                        
-                        VStack(spacing: 12) {
-                            if let assetID = cp.photoAssetID {
-                                PhotoAssetView(assetID: assetID)
-                                    .frame(width: 250, height: 250)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .shadow(radius: 10)
-                            } else if let url = cp.photoURL, let imageURL = URL(string: url) {
-                                AsyncImage(url: imageURL) { image in
-                                    image.resizable().scaledToFill()
-                                } placeholder: {
-                                    ProgressView()
-                                }
-                                .frame(width: 250, height: 250)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                            } else {
-                                Image(systemName: "photo")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 100, height: 100)
-                                    .foregroundColor(.gray)
-                                    .frame(width: 250, height: 250)
-                                    .background(Color.white)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                            }
-                            
-                            Text(cp.name ?? "Checkpoint")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Material.ultraThin)
-                                .cornerRadius(8)
-                        }
-                        .transition(.scale.combined(with: .opacity))
-                    }
-                    .zIndex(100)
                 }
             }
 
@@ -201,7 +146,10 @@ struct MapView: View {
                 NavigationStack {
                     if let trip = viewModel?.currentTrip {
                         TimelineView(trip: trip) { checkpoint in
-                            viewModel?.selectCheckpoint(checkpoint)
+                            // チェックポイントが含まれるグループを探して選択
+                            if let group = viewModel?.groupedCheckpoints.first(where: { $0.checkpoints.contains(where: { $0.id == checkpoint.id }) }) {
+                                viewModel?.selectGroup(group)
+                            }
                         }
                     }
                 }
@@ -233,6 +181,60 @@ struct MapView: View {
                     viewModel?.centerMapOnCheckpoints()
                 }
             }
+    }
+
+    @ViewBuilder
+    private func mapContent(viewModel: MapViewModel) -> some View {
+        MapReader { proxy in
+            let cameraBinding = Binding(
+                get: { viewModel.cameraPosition },
+                set: { viewModel.cameraPosition = $0 }
+            )
+
+            Map(position: cameraBinding) {
+                ForEach(viewModel.groupedCheckpoints) { group in
+                    Annotation("", coordinate: group.coordinate) {
+                        annotationContent(for: group, viewModel: viewModel)
+                    }
+                }
+            }
+            .mapStyle(.standard)
+            .onTapGesture {
+                viewModel.selectedGroup = nil
+            }
+            .onChange(of: viewModel.selectedGroup) { _, newGroup in
+                handleGroupSelection(newGroup: newGroup, proxy: proxy)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func annotationContent(for group: MapViewModel.GroupedCheckpoint, viewModel: MapViewModel) -> some View {
+        PinAnnotation(
+            group: group,
+            isSelected: viewModel.selectedGroup?.id == group.id
+        )
+        .onTapGesture {
+            viewModel.selectGroup(group)
+        }
+    }
+
+    private func handleGroupSelection(newGroup: MapViewModel.GroupedCheckpoint?, proxy: MapProxy) {
+        if let group = newGroup {
+            // MapProxyを使わずにviewModelのcameraPositionを更新
+            if let viewModel = viewModel {
+                withAnimation(.easeInOut(duration: 1.0)) {
+                    viewModel.cameraPosition = .camera(
+                        MapCamera(
+                            centerCoordinate: group.coordinate,
+                            distance: 500,
+                            heading: 0,
+                            pitch: 0
+                        )
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -10,7 +10,13 @@
       "Bash(xcrun simctl:*)",
       "Bash(tr:*)",
       "Bash(curl:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(for photo in /tmp/routy_test_photos/*.jpg)",
+      "Bash(do xcrun simctl addmedia D76BEB0B-A73A-4F4D-BB0E-FCA14BE04826 \"$photo\")",
+      "Bash(done)",
+      "Bash(exiftool:*)",
+      "Bash(mdls:*)",
+      "Bash(defaults read:*)"
     ]
   }
 }

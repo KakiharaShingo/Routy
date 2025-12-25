@@ -32,6 +32,8 @@ class Checkpoint {
     var note: String?
     /// 住所(逆ジオコーディング結果)
     var address: String?
+    /// カテゴリ（施設の種類）
+    var category: CheckpointCategory?
     /// 親の旅行
     var trip: Trip?
 
@@ -72,6 +74,7 @@ class Checkpoint {
         name: String? = nil,
         note: String? = nil,
         address: String? = nil,
+        category: CheckpointCategory? = nil,
         trip: Trip? = nil
     ) {
         self.latitude = latitude
@@ -84,11 +87,53 @@ class Checkpoint {
         self.name = name
         self.note = note
         self.address = address
+        self.category = category
         self.trip = trip
     }
 
     /// CLLocationCoordinate2Dを返すヘルパーメソッド
     func coordinate() -> CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+/// チェックポイントのカテゴリ（施設の種類）
+enum CheckpointCategory: String, Codable, CaseIterable {
+    case restaurant = "restaurant"      // レストラン・飲食店
+    case cafe = "cafe"                  // カフェ
+    case gasStation = "gas_station"     // ガソリンスタンド
+    case hotel = "hotel"                // 宿泊施設
+    case tourist = "tourist"            // 観光地
+    case park = "park"                  // 公園
+    case shopping = "shopping"          // ショッピング
+    case transport = "transport"        // 駅・空港などの交通機関
+    case other = "other"                // その他
+
+    var displayName: String {
+        switch self {
+        case .restaurant: return "飲食店"
+        case .cafe: return "カフェ"
+        case .gasStation: return "ガソリンスタンド"
+        case .hotel: return "宿泊施設"
+        case .tourist: return "観光地"
+        case .park: return "公園"
+        case .shopping: return "ショッピング"
+        case .transport: return "交通機関"
+        case .other: return "その他"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .restaurant: return "fork.knife"
+        case .cafe: return "cup.and.saucer.fill"
+        case .gasStation: return "fuelpump.fill"
+        case .hotel: return "bed.double.fill"
+        case .tourist: return "camera.fill"
+        case .park: return "leaf.fill"
+        case .shopping: return "cart.fill"
+        case .transport: return "tram.fill"
+        case .other: return "mappin.circle.fill"
+        }
     }
 }

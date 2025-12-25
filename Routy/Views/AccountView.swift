@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 import FirebaseCore
 import FirebaseAuth
 import AuthenticationServices
@@ -17,6 +18,7 @@ import FirebaseFirestore
 /// アカウント情報・設定画面 (Redesigned)
 struct AccountView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     private let authService = AuthService.shared
     
     @State private var email = ""
@@ -40,6 +42,7 @@ struct AccountView: View {
     @State private var currentNonce: String?
     @State private var showForgotPassword = false // パスワード忘れ
     @State private var resetEmail = ""
+    @State private var showLogoutConfirmation = false // ログアウト確認
 
     var body: some View {
         ZStack {
@@ -63,7 +66,7 @@ struct AccountView: View {
                          SettingsCard
                          LogoutButton
                     }
-                    
+
                     Spacer(minLength: 40)
                 }
                 .padding(20)
@@ -367,26 +370,41 @@ struct AccountView: View {
     
     var SettingsCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("設定")
+            Text("その他")
                 .font(.headline)
-            
-            Toggle("プレミアムモード（高画質保存）", isOn: $isPremium)
-                .onChange(of: isPremium) { newValue in
-                    savePremiumStatus(newValue)
+
+            NavigationLink(destination: SettingsView()) {
+                HStack {
+                    Label("アプリ設定", systemImage: "gearshape")
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
                 }
                 .padding(12)
                 .background(Color(.systemGray6))
                 .cornerRadius(12)
+            }
+
+            // プレミアムモードは将来実装予定のため一旦非表示
+            // Toggle("プレミアムモード（高画質保存）", isOn: $isPremium)
+            //     .onChange(of: isPremium) { newValue in
+            //         savePremiumStatus(newValue)
+            //     }
+            //     .padding(12)
+            //     .background(Color(.systemGray6))
+            //     .cornerRadius(12)
         }
         .padding(24)
         .background(Color(UIColor.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 5)
     }
-    
+
     var LogoutButton: some View {
         Button(action: {
-            try? authService.signOut()
+            showLogoutConfirmation = true
         }) {
             Text("ログアウト")
                 .fontWeight(.bold)
@@ -396,6 +414,19 @@ struct AccountView: View {
                 .foregroundColor(.red)
                 .cornerRadius(12)
                 .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        }
+        .alert("ログアウトしますか？", isPresented: $showLogoutConfirmation) {
+            Button("キャンセル", role: .cancel) { }
+            Button("ログアウト", role: .destructive) {
+                Task {
+                    // ログアウト前にクラウドに同期
+                    await SyncManager.shared.syncAll(modelContext: modelContext)
+                    // ログアウト
+                    try? authService.signOut()
+                }
+            }
+        } message: {
+            Text("ログアウトすると、このデバイスのデータは削除されます。\n再度ログインすることでデータを復元できます。")
         }
     }
     

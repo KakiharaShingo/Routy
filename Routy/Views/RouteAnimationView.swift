@@ -293,11 +293,28 @@ struct RouteAnimationView: View {
                             }
 
                             // 情報カード
-                            VStack(spacing: 4) {
-                                Text(cp.name ?? "スポット")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(1)
+                            VStack(spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Text(cp.name ?? "スポット")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+
+                                    // カテゴリバッジ
+                                    if let category = cp.category {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: category.icon)
+                                                .font(.system(size: 10))
+                                            Text(category.displayName)
+                                                .font(.system(size: 9, weight: .semibold))
+                                        }
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 2)
+                                        .background(categoryColor(for: category))
+                                        .clipShape(Capsule())
+                                    }
+                                }
 
                                 Text(DateFormatter.japaneseDateTime.string(from: cp.timestamp))
                                     .font(.caption)
@@ -362,6 +379,20 @@ struct RouteAnimationView: View {
 
     private func updateCameraPosition() {
         // 未使用（onChangeで制御）
+    }
+
+    private func categoryColor(for category: CheckpointCategory) -> Color {
+        switch category {
+        case .restaurant: return .orange
+        case .cafe: return .brown
+        case .gasStation: return .red
+        case .hotel: return .purple
+        case .tourist: return .blue
+        case .park: return .green
+        case .shopping: return .pink
+        case .transport: return .indigo
+        case .other: return .gray
+        }
     }
 }
 

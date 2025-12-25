@@ -62,25 +62,33 @@ class SyncManager {
         // 同期待ちのTripを取得
         let tripDescriptor = FetchDescriptor<Trip>(predicate: #Predicate { $0.needsSync })
         let pendingTrips = try context.fetch(tripDescriptor)
-        
+
+        print("📤 [SyncManager] アップロード開始: Trip \(pendingTrips.count)件")
+
         for trip in pendingTrips {
             if trip.firebaseId == nil {
                 // 新規作成
+                print("📤 [SyncManager] Trip新規作成: \(trip.name)")
                 let newId = try await firestore.createTrip(trip)
                 trip.firebaseId = newId
+                print("✅ [SyncManager] Trip作成完了: ID=\(newId)")
             } else {
                 // 更新
+                print("📤 [SyncManager] Trip更新: \(trip.name)")
                 try await firestore.updateTrip(trip)
+                print("✅ [SyncManager] Trip更新完了")
             }
             // 同期完了状態にする
             trip.needsSync = false
             trip.syncStatus = .synced
             trip.lastSyncedAt = Date()
         }
-        
+
         // 同期待ちのCheckpointを取得
         let checkpointDescriptor = FetchDescriptor<Checkpoint>(predicate: #Predicate { $0.needsSync })
         let pendingCheckpoints = try context.fetch(checkpointDescriptor)
+
+        print("📤 [SyncManager] アップロード開始: Checkpoint \(pendingCheckpoints.count)件")
         
         // ユーザープロファイルの取得（プレミアム状態確認のため）
         let profile = try await firestore.getUserProfile(userId: userId)
@@ -132,7 +140,9 @@ class SyncManager {
     private func downloadUpdates(userId: String, context: ModelContext) async throws {
         // Firebaseから全Trip取得（最適化するなら updatedAfter クエリを使う）
         let cloudTrips = try await firestore.getUserTrips(userId: userId)
-        
+
+        print("📥 [SyncManager] ダウンロード開始: Trip \(cloudTrips.count)件")
+
         for dto in cloudTrips {
             // ローカルに存在するか確認
             let tripId = dto.id
@@ -143,16 +153,22 @@ class SyncManager {
                 // 競合解決: Last-Write-Wins
                 // ローカルの方が新しい、かつまだ同期していない変更がある場合は上書きしない
                 if existingTrip.updatedAt < dto.updatedAt && !existingTrip.needsSync {
+                    print("📥 [SyncManager] Trip更新: \(dto.name)")
                     updateLocalTrip(existingTrip, with: dto)
+                } else {
+                    print("⏭️ [SyncManager] Trip スキップ（ローカルが新しい）: \(dto.name)")
                 }
             } else {
                 // 新規作成
+                print("📥 [SyncManager] Trip新規作成: \(dto.name)")
                 let newTrip = createLocalTrip(from: dto, in: context)
                 // Checkpointsも取得
                 try await downloadCheckpoints(for: newTrip, context: context)
+                print("✅ [SyncManager] Trip作成完了（Checkpoint含む）")
             }
         }
         try context.save()
+        print("✅ [SyncManager] ダウンロード完了")
     }
     
     private func updateLocalTrip(_ trip: Trip, with dto: TripDTO) {

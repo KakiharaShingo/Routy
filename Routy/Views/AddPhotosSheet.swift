@@ -94,12 +94,18 @@ struct AddPhotosSheet: View {
     }
 
     private func loadPhotos() {
-        guard let viewModel = viewModel else { return }
+        print("🔍 AddPhotosSheet.loadPhotos() 実行開始")
+        guard let viewModel = viewModel else {
+            print("❌ viewModel is nil")
+            return
+        }
+        print("✅ viewModel exists")
 
         isLoading = true
         errorMessage = nil
 
         Task {
+            print("🔍 viewModel.loadPhotosForTrip 呼び出し直前")
             await viewModel.loadPhotosForTrip(trip: trip, startDate: trip.startDate, endDate: trip.endDate)
 
             await MainActor.run {

@@ -83,6 +83,9 @@ struct HomeView: View {
                 TripDetailView(trip: trip)
             }
             .task {
+                // データ同期サービスの監視を開始
+                DataSyncService.shared.startMonitoring(modelContext: modelContext)
+
                 await loadStats()
                 await SyncManager.shared.syncAll(modelContext: modelContext)
             }

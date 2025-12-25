@@ -192,14 +192,29 @@ struct ImageCheckinSheet: View {
             trip: trip
         )
 
-        modelContext.insert(checkpoint)
-        trip.checkpoints.append(checkpoint)
+        // カテゴリを自動判定（非同期）
+        Task {
+            let coordinate = CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)
+            await withCheckedContinuation { continuation in
+                LocationCategoryDetector.shared.detectCategory(at: coordinate) { category in
+                    checkpoint.category = category
+                    continuation.resume()
+                }
+            }
 
-        do {
-            try modelContext.save()
-            isPresented = false
-        } catch {
-            errorMessage = "保存に失敗しました: \(error.localizedDescription)"
+            modelContext.insert(checkpoint)
+            trip.checkpoints.append(checkpoint)
+
+            do {
+                try modelContext.save()
+                await MainActor.run {
+                    isPresented = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "保存に失敗しました: \(error.localizedDescription)"
+                }
+            }
         }
     }
 }

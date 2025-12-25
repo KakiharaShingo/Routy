@@ -16,7 +16,9 @@ struct TripDetailView: View {
     @State private var showManualCheckin = false
     @State private var showLocationSearch = false
     @State private var showImageCheckin = false
-    
+    @State private var showPhotoOptions = false
+    @State private var showMultiPhotoCheckin = false
+
     // Environment
     @Environment(\.dismiss) private var dismiss
 
@@ -65,8 +67,8 @@ struct TripDetailView: View {
                             .foregroundColor(.gray)
                             .padding(.horizontal, 4)
                         
-                        Button(action: { showAddPhotos = true }) {
-                            ActionCard(icon: "photo.on.rectangle", title: "写真から追加", subtitle: "カメラロールからまとめて追加", color: .purple)
+                        Button(action: { showPhotoOptions = true }) {
+                            ActionCard(icon: "photo.on.rectangle", title: "写真から追加", subtitle: "カメラロールから追加", color: .purple)
                         }
                         .buttonStyle(.plain)
                     }
@@ -90,6 +92,20 @@ struct TripDetailView: View {
         }
         .sheet(isPresented: $showImageCheckin) {
             ImageCheckinSheet(trip: trip, isPresented: $showImageCheckin)
+        }
+        .sheet(isPresented: $showMultiPhotoCheckin) {
+            MultiPhotoCheckinSheet(trip: trip, isPresented: $showMultiPhotoCheckin)
+        }
+        .confirmationDialog("写真から追加", isPresented: $showPhotoOptions, titleVisibility: .visible) {
+            Button("自動追加（期間内の写真を一括取り込み）") {
+                showAddPhotos = true
+            }
+            Button("手動選択（複数可）") {
+                showMultiPhotoCheckin = true
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("旅行期間内の写真を自動で取り込むか、写真を個別に選択して追加するかを選んでください")
         }
     }
 }

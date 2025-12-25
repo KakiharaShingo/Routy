@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Photos
+import SwiftData
 
 /// タイムライン画面
 struct TimelineView: View {
@@ -15,7 +16,7 @@ struct TimelineView: View {
 
     @State private var viewModel = TimelineViewModel()
     @State private var editMode: EditMode = .inactive
-    @State private var selectedCheckpoints: Set<Checkpoint.ID> = []
+    @State private var selectedCheckpoints: Set<PersistentIdentifier> = []
     @State private var showDeleteConfirmation = false
 
     @Environment(\.dismiss) private var dismiss
@@ -121,8 +122,26 @@ struct CheckpointRow: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(DateFormatter.timeOnly.string(from: checkpoint.timestamp))
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(DateFormatter.timeOnly.string(from: checkpoint.timestamp))
+                        .font(.headline)
+
+                    // カテゴリアイコン
+                    if let category = checkpoint.category {
+                        HStack(spacing: 4) {
+                            Image(systemName: category.icon)
+                                .font(.system(size: 12))
+                                .foregroundColor(.white)
+                            Text(category.displayName)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(categoryColor(for: category))
+                        .clipShape(Capsule())
+                    }
+                }
 
                 if let address = checkpoint.address {
                     Text(address)
@@ -140,6 +159,20 @@ struct CheckpointRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func categoryColor(for category: CheckpointCategory) -> Color {
+        switch category {
+        case .restaurant: return .orange
+        case .cafe: return .brown
+        case .gasStation: return .red
+        case .hotel: return .purple
+        case .tourist: return .blue
+        case .park: return .green
+        case .shopping: return .pink
+        case .transport: return .indigo
+        case .other: return .gray
+        }
     }
 }
 

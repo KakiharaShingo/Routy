@@ -124,10 +124,14 @@ struct CreateTripSheet: View {
             }
 
             checkpoints = await photoService.extractCheckpoints(from: assets)
-            
-            // 住所取得 (オプション: 時間がかかるので非同期でやるか、ここではスキップするか)
-            // ここではユーザー体験のため、まずは保存を優先し、あとで詳細を開いたときに住所取得などを検討
-            // 今回はとりあえずそのまま保存
+
+            // 住所取得のみ実行（カテゴリは後で手動設定可能）
+            // カテゴリ判定は並列処理でデッドロックするため一旦スキップ
+            for checkpoint in checkpoints {
+                let address = await geocodingService.getAddress(for: checkpoint.coordinate())
+                checkpoint.address = address
+                checkpoint.category = .other // デフォルトカテゴリを設定
+            }
         }
 
         let trip = Trip(
@@ -152,13 +156,39 @@ struct CreateTripSheet: View {
             }
             
             try modelContext.save()
-            
-            // クラウドへの同期開始
+
+            // 画面を閉じる
+            isPresented = false
+
+            // バックグラウンドでカテゴリ判定と同期を実行
             Task {
+                // カテゴリ判定（順次処理で確実に）
+                for checkpoint in checkpoints {
+                    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                        LocationCategoryDetector.shared.detectCategory(
+                            at: checkpoint.coordinate(),
+                            timestamp: checkpoint.timestamp
+                        ) { category in
+                            Task { @MainActor in
+                                checkpoint.category = category ?? .other
+                                checkpoint.markNeedsSync()
+                                print("✅ [CreateTrip] カテゴリ判定完了: \(checkpoint.name ?? "不明") -> \(checkpoint.category?.displayName ?? "その他")")
+                                continuation.resume()
+                            }
+                        }
+                    }
+                }
+
+                // カテゴリ判定後に保存
+                do {
+                    try modelContext.save()
+                } catch {
+                    print("❌ [CreateTrip] カテゴリ保存エラー: \(error)")
+                }
+
+                // クラウドへの同期
                 await SyncManager.shared.syncAll(modelContext: modelContext)
             }
-            
-            isPresented = false
         } catch {
             errorMessage = "保存に失敗しました: \(error.localizedDescription)"
             showError = true

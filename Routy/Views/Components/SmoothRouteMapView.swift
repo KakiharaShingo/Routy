@@ -563,7 +563,7 @@ struct SmoothRouteMapView: UIViewRepresentable {
                 }
                 view?.image = UIImage(systemName: iconName)?.withTintColor(.systemRed, renderingMode: .alwaysOriginal)
                 return view
-            } else if annotation is CheckpointAnnotation {
+            } else if let cpAnnotation = annotation as? CheckpointAnnotation {
                 let identifier = "Checkpoint"
                 var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
                 if view == nil {
@@ -571,8 +571,17 @@ struct SmoothRouteMapView: UIViewRepresentable {
                 } else {
                     view?.annotation = annotation
                 }
-                view?.markerTintColor = .systemBlue
-                view?.glyphImage = UIImage(systemName: "photo")
+
+                // カテゴリに応じてピンをカスタマイズ
+                let checkpoint = cpAnnotation.checkpoint
+                if let category = checkpoint.category {
+                    view?.markerTintColor = categoryUIColor(for: category)
+                    view?.glyphImage = UIImage(systemName: category.icon)
+                } else {
+                    view?.markerTintColor = .systemBlue
+                    view?.glyphImage = UIImage(systemName: "photo")
+                }
+
                 // Custom Callout handling via didSelect
                 view?.canShowCallout = false // We handle selection manually to show SwiftUI Text
                 return view
@@ -586,6 +595,20 @@ struct SmoothRouteMapView: UIViewRepresentable {
 
                 // Deselect to allow re-selection
                 mapView.deselectAnnotation(cpAnnotation, animated: true)
+            }
+        }
+
+        private func categoryUIColor(for category: CheckpointCategory) -> UIColor {
+            switch category {
+            case .restaurant: return .systemOrange
+            case .cafe: return .systemBrown
+            case .gasStation: return .systemRed
+            case .hotel: return .systemPurple
+            case .tourist: return .systemBlue
+            case .park: return .systemGreen
+            case .shopping: return .systemPink
+            case .transport: return .systemIndigo
+            case .other: return .systemGray
             }
         }
     }

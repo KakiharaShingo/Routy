@@ -295,11 +295,7 @@ struct CheckinSheet: View {
             return
         }
 
-        // Tripに直接保存、またはTripなしの独立したCheckpointとして保存
-        
-        // 場所名（POI）があればnameに保存
-        // メモはそのままnoteに保存
-        
+        // Checkpointを作成
         let checkpoint = Checkpoint(
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
@@ -311,29 +307,41 @@ struct CheckinSheet: View {
             address: currentAddress != "取得中..." ? currentAddress : nil,
             trip: trip
         )
-        
-        // 同期のためにフラグを立てる
-        checkpoint.markNeedsSync()
 
-        modelContext.insert(checkpoint)
-        
-        if let trip = trip {
-            trip.checkpoints.append(checkpoint)
-        }
+        // カテゴリを自動判定（非同期）
+        Task {
+            await withCheckedContinuation { continuation in
+                LocationCategoryDetector.shared.detectCategory(at: coordinate) { category in
+                    checkpoint.category = category
+                    continuation.resume()
+                }
+            }
 
-        do {
-            try modelContext.save()
-            
-            // 完了メッセージを表示して少し待ってから閉じる
-            withAnimation {
-                showSuccessMessage = true
+            // 同期のためにフラグを立てる
+            checkpoint.markNeedsSync()
+
+            modelContext.insert(checkpoint)
+
+            if let trip = trip {
+                trip.checkpoints.append(checkpoint)
             }
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                isPresented = false
+
+            do {
+                try modelContext.save()
+
+                await MainActor.run {
+                    // 完了メッセージを表示して少し待ってから閉じる
+                    withAnimation {
+                        showSuccessMessage = true
+                    }
+
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        isPresented = false
+                    }
+                }
+            } catch {
+                print("保存エラー: \(error)")
             }
-        } catch {
-            print("保存エラー: \(error)")
         }
     }
 }

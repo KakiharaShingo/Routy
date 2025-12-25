@@ -34,9 +34,39 @@ class AuthService {
     private init() {
         // 認証状態の変更を監視
         self.authStateListenerHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
+            let previousUser = self?.currentUser
+            let previousUserId = previousUser?.uid
+            let previousIsAnonymous = previousUser?.isAnonymous ?? false
+            let newUserId = user?.uid
+            let newIsAnonymous = user?.isAnonymous ?? true
+
             self?.currentUser = user
             self?.isAuthenticated = (user != nil)
-            print("👤 [AuthService] ユーザー状態変更: \(user?.uid ?? "nil")")
+            print("👤 [AuthService] ユーザー状態変更: \(user?.uid ?? "nil"), 匿名: \(newIsAnonymous)")
+
+            // ログイン/ログアウトイベントを通知
+            if let newUserId = newUserId, previousUserId != newUserId {
+                // 匿名→匿名の場合はスキップ（アプリ起動時の初回匿名ログイン）
+                if previousIsAnonymous && newIsAnonymous {
+                    print("👤 [AuthService] 初回匿名ログイン - 通知スキップ")
+                    return
+                }
+
+                // ログインまたはユーザー切り替え
+                // 匿名→本登録の場合もログインとして通知（データは保持）
+                NotificationCenter.default.post(
+                    name: .authStateDidChange,
+                    object: nil,
+                    userInfo: ["isLogin": true, "userId": newUserId, "isAnonymous": newIsAnonymous]
+                )
+            } else if newUserId == nil && previousUserId != nil {
+                // ログアウト（明示的なサインアウト）
+                NotificationCenter.default.post(
+                    name: .authStateDidChange,
+                    object: nil,
+                    userInfo: ["isLogin": false, "userId": ""]
+                )
+            }
         }
     }
     

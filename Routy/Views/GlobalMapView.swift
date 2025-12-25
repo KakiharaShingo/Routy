@@ -31,118 +31,28 @@ struct GlobalMapView: View {
     var body: some View {
         ZStack(alignment: .top) {
             if let viewModel = viewModel {
-                // 地図
-                Map(position: Binding(
-                    get: { viewModel.cameraPosition },
-                    set: { viewModel.cameraPosition = $0 }
-                ), selection: Binding(
-                    get: { viewModel.selectedCheckpoint?.id },
-                    set: { id in
-                        if let id = id, let checkpoint = viewModel.checkpoints.first(where: { $0.id == id }) {
-                            viewModel.selectCheckpoint(checkpoint)
-                        } else {
-                            viewModel.selectedCheckpoint = nil
-                        }
-                    }
-                )) {
-                    ForEach(viewModel.checkpoints) { checkpoint in
-                        Annotation("", coordinate: checkpoint.coordinate()) {
-                            // シンプルなピン表示（画像表示なし）
-                            VStack(spacing: 0) {
-                                Circle()
-                                    .fill(checkpoint.type == .photo ? Color.blue : Color.green)
-                                    .frame(width: viewModel.selectedCheckpoint?.id == checkpoint.id ? 36 : 28,
-                                           height: viewModel.selectedCheckpoint?.id == checkpoint.id ? 36 : 28)
-                                    .overlay(
-                                        Image(systemName: checkpoint.type == .photo ? "camera.fill" : "mappin")
-                                            .font(.system(size: viewModel.selectedCheckpoint?.id == checkpoint.id ? 16 : 12))
-                                            .foregroundColor(.white)
-                                    )
-                                    .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                // 地図レイヤー
+                mapLayer(viewModel: viewModel)
 
-                                PinTriangle()
-                                    .fill(checkpoint.type == .photo ? Color.blue : Color.green)
-                                    .frame(width: viewModel.selectedCheckpoint?.id == checkpoint.id ? 12 : 8,
-                                           height: viewModel.selectedCheckpoint?.id == checkpoint.id ? 12 : 8)
-                                    .offset(y: -1)
-                            }
-                            .scaleEffect(viewModel.selectedCheckpoint?.id == checkpoint.id ? 1.2 : 1.0)
-                            .animation(.spring(response: 0.3), value: viewModel.selectedCheckpoint?.id == checkpoint.id)
-                            .onTapGesture {
-                                withAnimation {
-                                    viewModel.selectCheckpoint(checkpoint)
-                                    showPhotoPopup = true
-                                }
-                            }
-                        }
-                        .tag(checkpoint.id)
-                    }
-                }
-                .mapStyle(.standard)
-
-                // 選択されたピンの上に画像を表示
-                if showPhotoPopup, let selectedCheckpoint = viewModel.selectedCheckpoint {
+                // 選択されたピンの上に画像を表示（CalloutViewを使用）
+                if let selectedGroup = viewModel.selectedGroup {
                     ZStack {
                         // 背景タップで閉じる
                         Color.clear
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 withAnimation {
+                                    viewModel.selectedGroup = nil
                                     showPhotoPopup = false
                                 }
                             }
 
                         GeometryReader { geometry in
-                            VStack(spacing: 8) {
-                                // 大きな画像
-                                if let assetID = selectedCheckpoint.photoAssetID {
-                                    PhotoAssetView(assetID: assetID)
-                                        .frame(width: 200, height: 200)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                        .shadow(radius: 10)
-                                } else if let url = selectedCheckpoint.photoThumbnailURL, let imageURL = URL(string: url) {
-                                    AsyncImage(url: imageURL) { image in
-                                        image.resizable().scaledToFill()
-                                    } placeholder: {
-                                        ProgressView()
-                                    }
-                                    .frame(width: 200, height: 200)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .shadow(radius: 10)
-                                } else {
-                                    ZStack {
-                                        Color(.systemGray6)
-                                        Image(systemName: "photo")
-                                            .font(.largeTitle)
-                                            .foregroundColor(.gray)
-                                    }
-                                    .frame(width: 200, height: 200)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .shadow(radius: 10)
-                                }
-
-                                // 情報カード
-                                VStack(spacing: 4) {
-                                    Text(selectedCheckpoint.name ?? "スポット")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(.primary)
-                                        .lineLimit(1)
-
-                                    Text(DateFormatter.japaneseDateTime.string(from: selectedCheckpoint.timestamp))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .frame(width: 200)
-                                .background(Color(UIColor.systemBackground))
-                                .cornerRadius(10)
-                                .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
-                            }
-                            .position(x: geometry.size.width / 2, y: 150)
-                            .transition(.scale.combined(with: .opacity))
+                            CalloutView(group: selectedGroup)
+                                .position(x: geometry.size.width / 2, y: 150)
+                                .transition(.scale.combined(with: .opacity))
+                                .id(selectedGroup.id)
                         }
-                        .allowsHitTesting(false)
                     }
                     .zIndex(100)
                 }
@@ -281,7 +191,12 @@ struct GlobalMapView: View {
                                         .contentShape(Rectangle())
                                         .onTapGesture {
                                             withAnimation {
-                                                viewModel.selectCheckpoint(checkpoint)
+                                                // チェックポイントが含まれるグループを探して選択
+                                                if let group = viewModel.groupedCheckpoints.first(where: { $0.checkpoints.contains(where: { $0.id == checkpoint.id }) }) {
+                                                    viewModel.selectGroup(group)
+                                                } else {
+                                                    viewModel.selectCheckpoint(checkpoint)
+                                                }
                                                 // リストが表示されているときは画像も表示
                                                 if showList {
                                                     showPhotoPopup = true
@@ -368,6 +283,58 @@ struct GlobalMapView: View {
         
         // フィルタリング後に地図中心を合わせる
         viewModel.centerMapOnCheckpoints()
+    }
+    
+    @ViewBuilder
+    private func mapLayer(viewModel: MapViewModel) -> some View {
+        MapReader { proxy in
+            let positionBinding = Binding(
+                get: { viewModel.cameraPosition },
+                set: { viewModel.cameraPosition = $0 }
+            )
+
+            Map(position: positionBinding) {
+                ForEach(viewModel.groupedCheckpoints) { group in
+                    Annotation("", coordinate: group.coordinate) {
+                        groupAnnotation(for: group, viewModel: viewModel)
+                    }
+                }
+            }
+            .mapStyle(.standard)
+            .onTapGesture {
+                viewModel.selectedGroup = nil
+            }
+            .onChange(of: viewModel.selectedGroup) { _, newGroup in
+                handleGroupSelectionForGlobalMap(newGroup: newGroup, viewModel: viewModel)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func groupAnnotation(for group: MapViewModel.GroupedCheckpoint, viewModel: MapViewModel) -> some View {
+        PinAnnotation(
+            group: group,
+            isSelected: viewModel.selectedGroup?.id == group.id
+        )
+        .onTapGesture {
+            viewModel.selectGroup(group)
+            showPhotoPopup = true
+        }
+    }
+
+    private func handleGroupSelectionForGlobalMap(newGroup: MapViewModel.GroupedCheckpoint?, viewModel: MapViewModel) {
+        if let group = newGroup {
+            withAnimation(.easeInOut(duration: 1.0)) {
+                viewModel.cameraPosition = .camera(
+                    MapCamera(
+                        centerCoordinate: group.coordinate,
+                        distance: 500,
+                        heading: 0,
+                        pitch: 0
+                    )
+                )
+            }
+        }
     }
 }
 

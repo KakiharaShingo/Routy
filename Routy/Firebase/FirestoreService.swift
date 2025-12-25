@@ -171,15 +171,18 @@ class FirestoreService {
     
     /// Tripに関連するCheckpointを取得
     func getCheckpoints(forTrip tripId: String) async throws -> [CheckpointDTO] {
+        // インデックス不要にするため、order byを削除してクライアント側でソート
         let snapshot = try await db.collection("checkpoints")
             .whereField("tripId", isEqualTo: tripId)
-            .order(by: "timestamp", descending: false)
             .getDocuments()
-            
-        return snapshot.documents.compactMap { doc -> CheckpointDTO? in
+
+        let checkpoints = snapshot.documents.compactMap { doc -> CheckpointDTO? in
             let data = doc.data()
             return CheckpointDTO(id: doc.documentID, data: data)
         }
+
+        // クライアント側でタイムスタンプ順にソート
+        return checkpoints.sorted { $0.timestamp < $1.timestamp }
     }
     // MARK: - Users
     
